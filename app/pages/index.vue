@@ -7,7 +7,7 @@
           :model-value="step"
           @update:model-value="onStepChange(step)"
         />
-        <form v-if="step === 1" @submit.prevent="onSubmit">
+        <form v-if="step === 0" @submit.prevent="onSubmit">
           <span
             class="block font-semibold my-4 text-sm text-gray-600 dark:text-gray-400"
             >Для продолжения действий введите свой номер телефона. После нажатия
@@ -31,7 +31,7 @@
         </form>
 
         <form
-          v-else-if="step === 2"
+          v-else-if="step === 1"
           @submit.prevent="onConfirmCode"
           class="mt-6 space-y-4"
         >
@@ -68,7 +68,7 @@ import { vMaska } from "maska/vue";
 import type { StepperItem } from "@nuxt/ui";
 import { postUserLoginCode, postUserConfirmCode } from "../../utils/auth/user";
 
-const step = ref<number>(1);
+const step = ref<number>(0);
 const phone = ref("");
 const isLoading = ref(false);
 const clearPhone = ref("");
@@ -83,15 +83,8 @@ const canGoNext = computed(() => clearPhone.value.length === 11);
 const toast = useToast();
 
 const onStepChange = (val: number) => {
-  const next = Number(val ?? 1)
-  if (val === 2 && !canGoNext.value) {
-    toast.add({
-      title: "Введите номер телефона",
-      description: "Сначала заполните номер телефона в поле ввода",
-      icon: "i-lucide-alert-triangle",
-    });
-    return;
-  }
+  const next = Number(val ?? 0);
+  if (val === 2 && !canGoNext.value) return;
   step.value = next;
 };
 
@@ -113,6 +106,7 @@ const onSubmit = async () => {
   if (!canGoNext.value) {
     toast.add({
       title: "Номер некорректен",
+      color: "error",
       description: "Проверьте вводимые данные",
       icon: "i-lucide-alert-triangle",
     });
@@ -122,7 +116,7 @@ const onSubmit = async () => {
   await postUserLoginCode(clearPhone.value).then((res) => {
     try {
       if (res.data.operationResult === "OK") {
-        step.value = 2;
+        step.value = 1;
       }
     } catch (e) {
       console.log(e);
@@ -131,10 +125,11 @@ const onSubmit = async () => {
 
   try {
     isLoading.value = true;
-    step.value = 2;
+    step.value = 1;
     await nextTick();
     toast.add({
       title: "Код отправлен",
+      color: "info",
       description: "Проверьте сообщения в Telegram-боте",
       icon: "i-lucide-send",
     });
@@ -185,6 +180,7 @@ const onConfirmCode = async () => {
     if (codeValue.value.length !== 4) {
         toast.add({
             title: "Введите 4 цифры кода",
+            color: "error",
             icon: "i-lucide-alert-triangle",
         })
         return
@@ -195,6 +191,7 @@ const onConfirmCode = async () => {
             if (res.data.operationResult === "OK") {
                 toast.add({
                     title: "Успешно",
+                    color: "success",
                     icon: "i-lucide-check",
                 })
             }
@@ -205,10 +202,10 @@ const onConfirmCode = async () => {
 }
 
 onMounted(() => {
-    step.value = 1
+    step.value = 0
 })
 
 watch(step, (val) => {
-    if (val === 2) nextTick(() => focusIndex(0))
+    if (val === 1) nextTick(() => focusIndex(0))
 })
 </script>

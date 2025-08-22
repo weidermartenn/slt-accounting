@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-export const API = (token) => {
+export const API = (token: string) => {
     return axios.create({
         // baseURL: 'http://localhost:8080/api',
         baseURL: 'https://kings-logix.ru/api',
