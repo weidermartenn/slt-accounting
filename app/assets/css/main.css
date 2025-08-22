@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@layer base {
+    
+}
+
+@layer components {
+    .v-row {
+        @apply flex flex-row gap-2;
+    }
+    .v-col {
+        @apply flex flex-col gap-2;
+    }
+}
