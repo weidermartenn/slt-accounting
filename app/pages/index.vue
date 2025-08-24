@@ -35,6 +35,15 @@
           @submit.prevent="onConfirmCode"
           class="mt-6 space-y-4"
         >
+          <span
+            class="block font-semibold my-4 text-sm text-gray-600 dark:text-gray-400"
+            >Проверьте сообщения в Telegram. Вам отправлен 4-х значный код.
+            Введите его ниже и нажмите кнопку /
+            <code class="font-semibold text-white bg-zinc-500 rounded-sm p-0.5"
+              >↵ Enter</code
+            >
+            для продолжения действий.</span
+          >
           <div class="flex justify-center gap-3">
             <UInput
               v-for="(n, i) in 4"
@@ -53,8 +62,9 @@
             </UInput>
           </div>
           <div class="flex gap-3">
-            <UButton variant="soft" class="flex-1" @click="step = 1">Назад</UButton>
-            <UButton class="flex-1 justify-center" type="submit" size="lg">Подтвердить</UButton>
+            <UButton class="flex-1 justify-center" type="submit" size="lg"
+              >Подтвердить</UButton
+            >
           </div>
         </form>
       </UCard>
@@ -72,7 +82,7 @@ const step = ref<number>(0);
 const phone = ref("");
 const isLoading = ref(false);
 const clearPhone = ref("");
-const code = ref<string[]>(['', '', '', '']);
+const code = ref<string[]>(["", "", "", ""]);
 const inputs = ref<any[]>([]);
 
 watch(phone, () => {
@@ -138,74 +148,82 @@ const onSubmit = async () => {
   }
 };
 
-const setInputRef = (el: any, i: number) => { 
-    inputs.value[i] = el;
-}
+const setInputRef = (el: any, i: number) => {
+  inputs.value[i] = el;
+};
 const focusIndex = (i: number) => {
-    const el = inputs.value[i]?.input || inputs.value[i]?.$el?.querySelector?.('input') || inputs.value[i]
-    el?.focus?.(); el?.select?.();
-}
+  const el =
+    inputs.value[i]?.input ||
+    inputs.value[i]?.$el?.querySelector?.("input") ||
+    inputs.value[i];
+  el?.focus?.();
+  el?.select?.();
+};
 
 const onCodeInput = (e: Event, i: number) => {
-    const t = e.target as HTMLInputElement
-    const d = (t.value.match(/\d/g) || []).pop() || ''
-    code.value[i] = d
-    t.value = d
-    if (d && i < 3) focusIndex(i + 1)
-}
+  const t = e.target as HTMLInputElement;
+  const d = (t.value.match(/\d/g) || []).pop() || "";
+  code.value[i] = d;
+  t.value = d;
+  if (d && i < 3) focusIndex(i + 1);
+};
 
 const onCodeKeydown = (e: KeyboardEvent, i: number) => {
-    if (e.key === 'Backspace' && !code.value[i] && i > 0) {
-        e.preventDefault()
-        code.value[i - 1] = ''
-        focusIndex(i - 1)
-    } else if (e.key === 'ArrowLeft' && i > 0) {
-        e.preventDefault(); focusIndex(i - 1)
-    } else if (e.key === 'ArrowRight' && i < 3) {
-        e.preventDefault(); focusIndex(i + 1)
-    }
-}
+  if (e.key === "Backspace" && !code.value[i] && i > 0) {
+    e.preventDefault();
+    code.value[i - 1] = "";
+    focusIndex(i - 1);
+  } else if (e.key === "ArrowLeft" && i > 0) {
+    e.preventDefault();
+    focusIndex(i - 1);
+  } else if (e.key === "ArrowRight" && i < 3) {
+    e.preventDefault();
+    focusIndex(i + 1);
+  }
+};
 
 const onCodePaste = (e: ClipboardEvent) => {
-    const digits = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').split('')
-    if (!digits.length) return
-    e.preventDefault()
-    for (let j = 0; j < 4; j++) code.value[j] = digits[j] || ''
-    nextTick(() => focusIndex(Math.min(digits.length, 4) - 1 || 0))
-}
+  const digits = (e.clipboardData?.getData("text") || "")
+    .replace(/\D/g, "")
+    .split("");
+  if (!digits.length) return;
+  e.preventDefault();
+  for (let j = 0; j < 4; j++) code.value[j] = digits[j] || "";
+  nextTick(() => focusIndex(Math.min(digits.length, 4) - 1 || 0));
+};
 
-const codeValue = computed(() => code.value.join(''))
+const codeValue = computed(() => code.value.join(""));
 
 const onConfirmCode = async () => {
-    if (codeValue.value.length !== 4) {
-        toast.add({
-            title: "Введите 4 цифры кода",
-            color: "error",
-            icon: "i-lucide-alert-triangle",
-        })
-        return
-    }
-
-    await postUserConfirmCode(clearPhone.value, codeValue.value).then((res) => {
-        try {
-            if (res.data.operationResult === "OK") {
-                toast.add({
-                    title: "Успешно",
-                    color: "success",
-                    icon: "i-lucide-check",
-                })
-            }
-        } catch (e) {
-            console.log(e);
-        }
+  if (codeValue.value.length !== 4) {
+    toast.add({
+      title: "Введите 4 цифры кода",
+      color: "error",
+      icon: "i-lucide-alert-triangle",
     });
-}
+    return;
+  }
+
+  await postUserConfirmCode(clearPhone.value, codeValue.value).then((res) => {
+    try {
+      if (res.data.operationResult === "OK") {
+        toast.add({
+          title: "Успешно",
+          color: "success",
+          icon: "i-lucide-check",
+        });
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  });
+};
 
 onMounted(() => {
-    step.value = 0
-})
+  step.value = 0;
+});
 
 watch(step, (val) => {
-    if (val === 1) nextTick(() => focusIndex(0))
-})
+  if (val === 1) nextTick(() => focusIndex(0));
+});
 </script>
