@@ -1,6 +1,9 @@
 <template>
   <UApp>
-    <div class="w-full min-h-screen flex items-center justify-center p-4">
+    <div
+      v-cloak
+      class="w-full min-h-screen flex items-center justify-center p-4"
+    >
       <UCard class="w-sm md:w-md lg:w-lg">
         <UStepper
           :items="items"
@@ -18,13 +21,16 @@
             <span class="font-semibold">Номер телефона</span>
             <ClientOnly>
               <UInput
-                size="xl"
-                v-model="phone"
-                icon="i-lucide-smartphone"
-                v-maska="'+7 (###) ###-##-##'"
-                placeholder="+7 (***) ***-**-**"
-              >
+                  size="xl"
+                  v-model="phone"
+                  icon="i-lucide-smartphone"
+                  v-maska="'+7 (###) ###-##-##'"
+                  placeholder="+7 (***) ***-**-**"
+                >
               </UInput>
+              <template #fallback>
+                <USkeleton class="w-full h-10"></USkeleton>
+              </template>
             </ClientOnly>
             <UButton class="w-full justify-center" type="submit" size="lg"
               >Получить</UButton
@@ -75,21 +81,21 @@
 </template>
 
 <script setup lang="ts">
-
 definePageMeta({
-  public: true
-})
+  public: true,
+});
 
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { vMaska } from "maska/vue";
 import type { StepperItem } from "@nuxt/ui";
 import { postUserLoginCode, postUserConfirmCode } from "./model/user";
 
-const user = useState<any | null>('user', () => null)
+const user = useState<any | null>("user", () => null);
 
 const step = ref(0);
 const phone = ref("");
 const isLoading = ref(false);
+const isLoadingInput = ref(true);
 const clearPhone = ref("");
 const code = ref<string[]>(["", "", "", ""]);
 const inputs = ref<any[]>([]);
@@ -101,9 +107,9 @@ watch(phone, () => {
 const canGoNext = computed(() => clearPhone.value.length === 11);
 const toast = useToast();
 
-const onStepChange = (val: number) => {
+const onStepChange = (val: string | number | undefined) => {
   const next = Number(val ?? 0);
-  if (val === 2 && !canGoNext.value) return;
+  if (val === 1 && !canGoNext.value) return;
   step.value = next;
 };
 
@@ -219,10 +225,10 @@ const onConfirmCode = async () => {
         if (res?.operationResult === "OK") {
           user.value = res.object?.user || null;
 
-          const roleCode = user.value?.role?.code // ROLE_ADMIN
-          const isRegistered = !!user.value?.confirmed // критерий
+          const roleCode = user.value?.role?.code; // ROLE_ADMIN
+          const isRegistered = !!user.value?.confirmed; // критерий
 
-          navigateTo(roleCode === "ROLE_ADMIN" ? '/' : '/auth')
+          navigateTo(roleCode === "ROLE_ADMIN" ? "/" : "/auth");
 
           toast.add({
             title: "Успешно",
@@ -240,6 +246,7 @@ const onConfirmCode = async () => {
 
 onMounted(() => {
   step.value = 0;
+  isLoadingInput.value = false;
 });
 
 watch(step, (val) => {

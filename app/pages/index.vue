@@ -1,9 +1,10 @@
 <template>
-    <div class="flex flex-col justify-center items-center h-screen">
-        <p class="text-2xl text-red-500"> БРАТ ТУТ ЕСТЬ МОЩНИ СОЩНИ ЛАГМАН</p>
-        <UButton @click="onExit">Я не хочу лагман</UButton>
-        <img src="https://nasha.severnaya.ru/upload/iblock/a56/9tj04qte5xzer56pqyovzof1vlt1j961.webp">
-    </div>
+    <UApp>
+        <div v-cloak>
+            <UButton @click="onExit">Очистить куки</UButton>
+            <UniverSheet />
+        </div>
+    </UApp>
 </template>
 
 <script setup lang="ts">
