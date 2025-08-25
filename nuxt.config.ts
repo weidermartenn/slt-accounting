@@ -7,6 +7,11 @@ export default defineNuxtConfig({
   ui: {
     colorMode: false
   },
+  runtimeConfig: {
+    public: {
+      kingsApiBase: process.env.NUXT_KINGS_API_BASE || 'https://kings-logix.ru/api',
+    }
+  },
   app: {
     head: {
       title: 'SLT',

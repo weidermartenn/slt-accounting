@@ -76,7 +76,7 @@
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { vMaska } from "maska/vue";
 import type { StepperItem } from "@nuxt/ui";
-import { postUserLoginCode, postUserConfirmCode } from "../../utils/auth/user";
+import { postUserLoginCode, postUserConfirmCode } from "./auth/model/user";
 
 const step = ref<number>(0);
 const phone = ref("");
@@ -123,18 +123,12 @@ const onSubmit = async () => {
     return;
   }
 
-  await postUserLoginCode(clearPhone.value).then((res) => {
-    try {
-      if (res.data.operationResult === "OK") {
-        step.value = 1;
-      }
-    } catch (e) {
-      console.log(e);
-    }
-  });
-
   try {
     isLoading.value = true;
+    const res: any = await postUserLoginCode(clearPhone.value);
+    if (res?.operationResult !== "OK") {
+      console.log("okey");
+    }
     step.value = 1;
     await nextTick();
     toast.add({
@@ -142,6 +136,12 @@ const onSubmit = async () => {
       color: "info",
       description: "Проверьте сообщения в Telegram-боте",
       icon: "i-lucide-send",
+    });
+  } catch (e: any) {
+    toast.add({
+      title: "Ошибка",
+      color: "error",
+      icon: "i-lucide-alert-triangle",
     });
   } finally {
     isLoading.value = false;
@@ -204,19 +204,22 @@ const onConfirmCode = async () => {
     return;
   }
 
-  await postUserConfirmCode(clearPhone.value, codeValue.value).then((res) => {
-    try {
-      if (res.data.operationResult === "OK") {
-        toast.add({
-          title: "Успешно",
-          color: "success",
-          icon: "i-lucide-check",
-        });
+  await postUserConfirmCode(clearPhone.value, codeValue.value).then(
+    (res: any) => {
+      try {
+        if (res?.operationResult === "OK") {
+          toast.add({
+            title: "Успешно",
+            color: "success",
+            icon: "i-lucide-check",
+          });
+        }
+        console.log(res);
+      } catch (e) {
+        console.log(e);
       }
-    } catch (e) {
-      console.log(e);
     }
-  });
+  );
 };
 
 onMounted(() => {
