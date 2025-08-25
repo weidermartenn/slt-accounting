@@ -35,6 +35,29 @@ export default defineEventHandler(async (event) => {
             method: 'POST',
             body: { login: body.login, confirmToken: body.confirmToken }
         })
+
+        // @ts-ignore
+        const token = res?.object?.jwtToken
+
+        // @ts-ignore
+        const user = res?.object?.user
+
+        if (token) {
+            setCookie(event, 'access_token', token, {
+                httpOnly: true, sameSite: 'lax', path: '/',
+                secure: process.env.NODE_ENV === 'production',
+                maxAge: 60 * 60 * 24 * 30 // 30 days
+            })
+        }
+
+        if (user) {
+            const minimal = { confirmed: !!user.confirmed, roleCode: user.role?.code ?? null }
+            setCookie(event, 'u', Buffer.from(JSON.stringify(minimal)).toString('base64'), {
+                httpOnly: true, sameSite: 'lax', path: '/',
+                secure: process.env.NODE_ENV === 'production',
+                maxAge: 60 * 60 * 24 * 30 // 30 days
+            })
+        }
         
         return res
     } catch (e: any) {
