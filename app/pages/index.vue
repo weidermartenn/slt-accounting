@@ -1,30 +1,14 @@
 <template>
     <UApp>
-        <div v-cloak>
-            <UButton @click="onExit">Очистить куки</UButton>
-            <UniverSheet />
+        <div class="w-full h-screen flex flex-col items-center justify-center">
+            <p>Главная страница</p>
+            <UButton @click="$router.push('/sheet')" variant="ghost" color="primary">Перейти к таблице</UButton>
         </div>
     </UApp>
 </template>
 
 <script setup lang="ts">
-definePageMeta({
-    public: true
-})
 
-useHead({
-    title: 'SLT - таблица',
-    meta: [
-        {
-            name: 'description',
-            content: 'SLT - таблица',
-        },
-    ],
-})
-const onExit = async () => {
-    await $fetch('/api/auth/logout', { method: 'POST' })
-    navigateTo('/auth')
-}
 </script>
 
 <style scoped>

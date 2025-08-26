@@ -2,14 +2,18 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
-  modules: ['@nuxt/ui'],
+  modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/main.css'],
   ui: {
     colorMode: false
   },
+  pinia: {
+    storesDirs: ['./stores']
+  },
   runtimeConfig: {
     public: {
       kingsApiBase: process.env.NUXT_KINGS_API_BASE || 'https://kings-logix.ru/api',
+      sltApiBase: process.env.NUXT_SLT_API_BASE || 'http://77.222.43.243:8080/api'
     }
   },
   app: {

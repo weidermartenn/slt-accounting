@@ -1,8 +1,14 @@
 <template>
   <Teleport to="body">
-    <div v-if="isRouting" aria-busy="true" class="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm">
-      <div class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg bg-white dark:bg-zinc-900">
-        <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin"/>
+    <div
+      v-if="isRouting"
+      aria-busy="true"
+      class="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm"
+    >
+      <div
+        class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg bg-white dark:bg-zinc-900"
+      >
+        <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
         <span class="text-sm font-medium">Переход</span>
       </div>
     </div>
@@ -29,12 +35,12 @@
             <span class="font-semibold">Номер телефона</span>
             <ClientOnly>
               <UInput
-                  size="xl"
-                  v-model="phone"
-                  icon="i-lucide-smartphone"
-                  v-maska="'+7 (###) ###-##-##'"
-                  placeholder="+7 (***) ***-**-**"
-                >
+                size="xl"
+                v-model="phone"
+                icon="i-lucide-smartphone"
+                v-maska="'+7 (###) ###-##-##'"
+                placeholder="+7 (***) ***-**-**"
+              >
               </UInput>
               <template #fallback>
                 <USkeleton class="w-full h-10"></USkeleton>
@@ -78,7 +84,11 @@
             </UInput>
           </div>
           <div class="flex gap-3">
-            <UButton class="flex-1 justify-center" type="submit" size="lg" :loading="isRouting"
+            <UButton
+              class="flex-1 justify-center"
+              type="submit"
+              size="lg"
+              :loading="isRouting"
               >Подтвердить</UButton
             >
           </div>
@@ -94,14 +104,14 @@ definePageMeta({
 });
 
 useHead({
-  title: 'Авторизация',
+  title: "Авторизация",
   meta: [
     {
-      name: 'description',
-      content: 'Авторизация',
+      name: "description",
+      content: "Авторизация",
     },
   ],
-})
+});
 
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { vMaska } from "maska/vue";
@@ -109,14 +119,14 @@ import type { StepperItem } from "@nuxt/ui";
 import { postUserLoginCode, postUserConfirmCode } from "./model/user";
 
 const {
-  code, 
+  code,
   inputs,
   setInputRef,
   focusIndex,
   onCodeInput,
   onCodeKeydown,
   onCodePaste,
-  codeValue
+  codeValue,
 } = useOtpInput(4);
 
 const user = useState<any | null>("user", () => null);
@@ -142,8 +152,8 @@ const onStepChange = (val: string | number | undefined) => {
 };
 
 const items = ref<StepperItem[]>([
-  { title: "1", icon: "i-lucide-smartphone", value: 0, },
-  { title: "2", icon: "i-lucide-check-check", value: 1, },
+  { title: "1", icon: "i-lucide-smartphone", value: 0 },
+  { title: "2", icon: "i-lucide-check-check", value: 1 },
 ]);
 
 // Шаг 1
@@ -163,10 +173,10 @@ const onSubmit = async () => {
     const res: any = await postUserLoginCode(clearPhone.value);
     if (res?.operationResult !== "OK") {
       toast.add({
-        title: 'Не удалось отправить код',
-        color: 'error',
-        icon: 'i-lucide-alert-triangle',
-      })
+        title: "Не удалось отправить код",
+        color: "error",
+        icon: "i-lucide-alert-triangle",
+      });
     }
     step.value = 1;
     await nextTick();
@@ -198,17 +208,17 @@ const onConfirmCode = async () => {
   }
 
   const res: any = await postUserConfirmCode(clearPhone.value, codeValue.value);
-  if (res?.operationResult === 'OK') {
-    user.value = res.object?.user || null
+  if (res?.operationResult === "OK") {
+    user.value = res.object?.user || null;
     const isRegistered = !!user.value?.confirmed; // критерий
 
     try {
       isRouting.value = true;
-      await navigateTo(isRegistered ? '/' : '/auth')
+      await navigateTo(isRegistered ? "/" : "/auth");
     } finally {
       isRouting.value = false;
     }
-
+    console.log(res);
     toast.add({
       title: "Успешно",
       color: "success",

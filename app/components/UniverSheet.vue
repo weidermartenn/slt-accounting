@@ -1,5 +1,5 @@
 <template>
-  <div id="univer" style="width: 100%; height: 100vh;"></div>
+  <div id="univer" style="width: 100%; height: 94vh;"></div>
 </template>
 
 <script setup lang="ts">
@@ -10,6 +10,8 @@ import UniverPresetSheetsCoreEnUS from '@univerjs/preset-sheets-core/locales/en-
 import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets';
 import '@univerjs/preset-sheets-core/lib/index.css';
 import '@univerjs/sheets-ui/lib/index.css';
+
+defineProps()
 
 onMounted(() => {
   const { univerAPI } = createUniver({
@@ -28,13 +30,13 @@ onMounted(() => {
 
   univerAPI.createWorkbook({
     id: 'workbook-1',
-    name: 'Тестовая книга',
+    name: 'SLT - Транспортный учет',
     sheets: {
       'sheet-1': {
         id: 'sheet-1',
         name: 'Лист 1',
         rowCount: 100,
-        columnCount: 20,
+        columnCount: 28,
         cellData: {
           0: {
             0: { v: 'Данные' },
