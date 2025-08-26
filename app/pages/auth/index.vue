@@ -1,4 +1,12 @@
 <template>
+  <Teleport to="body">
+    <div v-if="isRouting" class="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm">
+      <div class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg bg-white dark:bg-zinc-900">
+        <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin"/>
+        <span class="text-sm font-medium">Переход</span>
+      </div>
+    </div>
+  </Teleport>
   <UApp>
     <div
       v-cloak
@@ -70,7 +78,7 @@
             </UInput>
           </div>
           <div class="flex gap-3">
-            <UButton class="flex-1 justify-center" type="submit" size="lg"
+            <UButton class="flex-1 justify-center" type="submit" size="lg" :loading="isRouting"
               >Подтвердить</UButton
             >
           </div>
@@ -85,10 +93,31 @@ definePageMeta({
   public: true,
 });
 
+useHead({
+  title: 'Авторизация',
+  meta: [
+    {
+      name: 'description',
+      content: 'Авторизация',
+    },
+  ],
+})
+
 import type { FormSubmitEvent } from "@nuxt/ui";
 import { vMaska } from "maska/vue";
 import type { StepperItem } from "@nuxt/ui";
 import { postUserLoginCode, postUserConfirmCode } from "./model/user";
+
+const {
+  code, 
+  inputs,
+  setInputRef,
+  focusIndex,
+  onCodeInput,
+  onCodeKeydown,
+  onCodePaste,
+  codeValue
+} = useOtpInput(4);
 
 const user = useState<any | null>("user", () => null);
 
@@ -97,8 +126,7 @@ const phone = ref("");
 const isLoading = ref(false);
 const isLoadingInput = ref(true);
 const clearPhone = ref("");
-const code = ref<string[]>(["", "", "", ""]);
-const inputs = ref<any[]>([]);
+const isRouting = ref(false);
 
 watch(phone, () => {
   clearPhone.value = phone.value.replace(/\D/g, "");
@@ -114,16 +142,8 @@ const onStepChange = (val: string | number | undefined) => {
 };
 
 const items = ref<StepperItem[]>([
-  {
-    title: "1",
-    icon: "i-lucide-smartphone",
-    value: 0,
-  },
-  {
-    title: "2",
-    icon: "i-lucide-check-check",
-    value: 1,
-  },
+  { title: "1", icon: "i-lucide-smartphone", value: 0, },
+  { title: "2", icon: "i-lucide-check-check", value: 1, },
 ]);
 
 // Шаг 1
@@ -142,7 +162,11 @@ const onSubmit = async () => {
     isLoading.value = true;
     const res: any = await postUserLoginCode(clearPhone.value);
     if (res?.operationResult !== "OK") {
-      console.log("okey");
+      toast.add({
+        title: 'Не удалось отправить код',
+        color: 'error',
+        icon: 'i-lucide-alert-triangle',
+      })
     }
     step.value = 1;
     await nextTick();
@@ -163,52 +187,6 @@ const onSubmit = async () => {
   }
 };
 
-const setInputRef = (el: any, i: number) => {
-  inputs.value[i] = el;
-};
-const focusIndex = (i: number) => {
-  const el =
-    inputs.value[i]?.input ||
-    inputs.value[i]?.$el?.querySelector?.("input") ||
-    inputs.value[i];
-  el?.focus?.();
-  el?.select?.();
-};
-
-const onCodeInput = (e: Event, i: number) => {
-  const t = e.target as HTMLInputElement;
-  const d = (t.value.match(/\d/g) || []).pop() || "";
-  code.value[i] = d;
-  t.value = d;
-  if (d && i < 3) focusIndex(i + 1);
-};
-
-const onCodeKeydown = (e: KeyboardEvent, i: number) => {
-  if (e.key === "Backspace" && !code.value[i] && i > 0) {
-    e.preventDefault();
-    code.value[i - 1] = "";
-    focusIndex(i - 1);
-  } else if (e.key === "ArrowLeft" && i > 0) {
-    e.preventDefault();
-    focusIndex(i - 1);
-  } else if (e.key === "ArrowRight" && i < 3) {
-    e.preventDefault();
-    focusIndex(i + 1);
-  }
-};
-
-const onCodePaste = (e: ClipboardEvent) => {
-  const digits = (e.clipboardData?.getData("text") || "")
-    .replace(/\D/g, "")
-    .split("");
-  if (!digits.length) return;
-  e.preventDefault();
-  for (let j = 0; j < 4; j++) code.value[j] = digits[j] || "";
-  nextTick(() => focusIndex(Math.min(digits.length, 4) - 1 || 0));
-};
-
-const codeValue = computed(() => code.value.join(""));
-
 const onConfirmCode = async () => {
   if (codeValue.value.length !== 4) {
     toast.add({
@@ -219,29 +197,24 @@ const onConfirmCode = async () => {
     return;
   }
 
-  await postUserConfirmCode(clearPhone.value, codeValue.value).then(
-    (res: any) => {
-      try {
-        if (res?.operationResult === "OK") {
-          user.value = res.object?.user || null;
+  const res: any = await postUserConfirmCode(clearPhone.value, codeValue.value);
+  if (res?.operationResult === 'OK') {
+    user.value = res.object?.user || null
+    const isRegistered = !!user.value?.confirmed; // критерий
 
-          const roleCode = user.value?.role?.code; // ROLE_ADMIN
-          const isRegistered = !!user.value?.confirmed; // критерий
-
-          navigateTo(roleCode === "ROLE_ADMIN" ? "/" : "/auth");
-
-          toast.add({
-            title: "Успешно",
-            color: "success",
-            icon: "i-lucide-check",
-          });
-        }
-        console.log(res);
-      } catch (e) {
-        console.log(e);
-      }
+    try {
+      isRouting.value = true;
+      await navigateTo(isRegistered ? '/' : '/auth')
+    } finally {
+      isRouting.value = false;
     }
-  );
+
+    toast.add({
+      title: "Успешно",
+      color: "success",
+      icon: "i-lucide-check",
+    });
+  }
 };
 
 onMounted(() => {

@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
 
     // 2 step - confirm code
     try {
-        const res = await $fetch(`${kingsApiBase}/user/loginByCodeConfirmation`, {
+        const res: any = await $fetch(`${kingsApiBase}/user/loginByCodeConfirmation`, {
             method: 'POST',
             body: { login: body.login, confirmToken: body.confirmToken }
         })
