@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="isRouting" class="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm">
+    <div v-if="isRouting" aria-busy="true" class="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm">
       <div class="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg bg-white dark:bg-zinc-900">
         <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin"/>
         <span class="text-sm font-medium">Переход</span>
