@@ -17,7 +17,7 @@ export function autoFitColumnAndRowData(
 ): { columnData: ColumnData; rowData: RowData } {
     const columnData: ColumnData = {}
     const rowData: RowData = {}
-
+    
     // calc column width by content
     for (let c = 0; c < colCount; c++) {
         let maxLen = 0

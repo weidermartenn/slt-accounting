@@ -2,8 +2,13 @@
   <UApp>
     <div v-cloak>
       <ClientOnly>
-        <div class="flex justify-end p-2 border-b">
-          <UButton class="cursor-pointer" @click="logout" variant="ghost" color="error">Выйти из аккаунта</UButton>
+        <div class="flex justify-between p-1 border-b">
+          <UButton class="cursor-pointer" @click="logout" variant="soft" color="secondary">Вернуться в ЛК</UButton>
+          <div class="v-row items-center border-2 border-[#DDDDDD] rounded-sm p-2">
+            <div class="w-10 h-6 bg-[#DDDDDD] rounded-sm"></div>
+            <span class="text-sm font-semibold">Нельзя редактировать</span>
+          </div>
+          <UButton class="cursor-pointer" @click="logout" variant="soft" color="error">Выйти из аккаунта</UButton>
         </div>
         <TransportAccountingAdmin :records="records"/>
         <template #fallback>

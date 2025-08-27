@@ -31,40 +31,41 @@ import {
 import "@univerjs/preset-sheets-core/lib/index.css";
 import "@univerjs/sheets-ui/lib/index.css";
 import type { transportAccounting } from "~/entities/TransportAccountingDto/types";
-import { autoFitColumnAndRowData } from "~/utils/autoFit"
+import { autoFitColumnAndRowData } from "~/utils/autoFit";
+import { lockCells, colLetter } from "~/utils/univer-protect";
 
 const props = defineProps<{
   records: Record<string, any[]>;
 }>();
 
 const HEADERS = [
-  "Дата загрузки",
-  "№ контейнера",
+  "Дата выгрузки",
+  "№ контейнера, Номер ТТН или Номер заявки",
   "Груз",
-  "Тип контейнера",
-  "Дата подачи",
-  "Адрес доставки",
+  "Тип контейнера/тонаж",
+  "Дата сдачи документов водителем",
+  "Адрес доставки/Назначение счета",
   "Наша фирма",
   "Клиент",
-  "Оплата нам",
+  "Форма оплаты нам С/БЕЗ НДС",
   "Сумма",
   "№ счета",
   "Дата счета",
-  "Дата оплаты",
+  "Дата оплаты нам",
   "Подрядчик",
-  "Водитель",
-  "Оплата ему",
-  "Ставка подрядчика",
-  "Выдано",
-  "№ доп. счета",
+  "Водитель АМ",
+  "Форма оплата подрядчику С/БЕЗ НДС",
+  "Ставка подрядчику",
+  "Сумма выданных/оплаченных средств",
+  "№ счета и сумма за ГСМ, запчасти",
   "Дата оплаты подрядчику",
-  "Менеджер",
-  "Главный клиент",
-  "Руководитель отдела",
+  "Ведущий менеджер",
+  "Ведущий по вызову/Начальник отдела",
+  "Ведущий по клиенту (как правило начальник отдела)",
   "Менеджер по продажам",
   "Доп. расходы",
   "Доход",
-  "Учитываемый доход",
+  "Доход полученный",
   "",
 ];
 
@@ -72,55 +73,79 @@ const COLUMN_COUNT = 28;
 
 const STYLES: Record<string, IStyleData> = {
   hdr: {
-    bg: { rgb: "#238D43" },
-    tb: 1,
+    bg: { rgb: "#5CCCCC" },
+    tb: 3,
     ht: 1,
     vt: 2,
     pd: {
-      l: 4
-    }
+      l: 4,
+    },
   },
   allrows: {
     tb: 2,
     vt: 2,
     pd: {
-      l: 4
+      l: 4,
+    },
+    bd: {
+      l: { s: 1, cl: { rgb: "#cccccc" } },
+      t: { s: 1, cl: { rgb: "#cccccc" } },
+      b: { s: 1, cl: { rgb: "#cccccc" } },
+      r: { s: 1, cl: { rgb: "#cccccc" } },
     }
   },
+  idcol: {
+    cl: { rgb: "#FFFFFF" },
+  },
+  lockedCol: {
+    bg: { rgb: "#DDDDDD"},
+    vt: 2,
+    pd: {
+      l: 4,
+    },
+    bd: {
+      l: { s: 1, cl: { rgb: "#cccccc" } },
+      t: { s: 1, cl: { rgb: "#cccccc" } },
+      b: { s: 1, cl: { rgb: "#cccccc" } },
+      r: { s: 1, cl: { rgb: "#cccccc" } },
+    }
+  }
 };
 
+const LOCKED_COLS = [4, 25, 26, 27]
+
 function buildRowCells(rec: transportAccounting) {
-  const cell = (v: any) =>
-    ({ v: v ?? "", s: "allrows" } as { v: any; s: string });
+  const cell = (v: any, col: number) =>
+    ({ v: v ?? "", s: LOCKED_COLS.includes(col) ? 'lockedCol' : 'allrows' } as { v: any; s: string });
   const row: Record<number, { v: any; s: string }> = {};
-  row[0] = cell(rec?.dateOfPickup);
-  row[1] = cell(rec?.numberOfContainer);
-  row[2] = cell(rec?.cargo);
-  row[3] = cell(rec?.typeOfContainer);
-  row[4] = cell(rec?.dateOfSubmission);
-  row[5] = cell(rec?.addressOfDelivery);
-  row[6] = cell(rec?.ourFirm);
-  row[7] = cell(rec?.client);
-  row[8] = cell(rec?.formPayAs);
-  row[9] = cell(rec?.summa);
-  row[10] = cell(rec?.numberOfBill);
-  row[11] = cell(rec?.dateOfBill);
-  row[12] = cell(rec?.datePayment);
-  row[13] = cell(rec?.contractor);
-  row[14] = cell(rec?.driver);
-  row[15] = cell(rec?.formPayHim);
-  row[16] = cell(rec?.contractorRate);
-  row[17] = cell(rec?.sumIssued);
-  row[18] = cell(rec?.numberOfBillAdd);
-  row[19] = cell(rec?.dateOfPaymentContractor);
-  row[20] = cell(rec?.manager);
-  row[21] = cell(rec?.clientLead);
-  row[22] = cell(rec?.departmentHead);
-  row[23] = cell(rec?.salesManager);
-  row[24] = cell(rec?.additionalExpenses);
-  row[25] = cell(rec?.income);
-  row[26] = cell(rec?.incomeLearned);
-  row[27] = cell(rec?.id);
+  row[0] = cell(rec?.dateOfPickup, 0);
+  row[1] = cell(rec?.numberOfContainer, 1);
+  row[2] = cell(rec?.cargo, 2);
+  row[3] = cell(rec?.typeOfContainer, 3);
+  row[4] = cell(rec?.dateOfSubmission, 4); // edit access denied
+  row[5] = cell(rec?.addressOfDelivery, 5);
+  row[6] = cell(rec?.ourFirm, 6);
+  row[7] = cell(rec?.client, 7);
+  row[8] = cell(rec?.formPayAs, 8);
+  row[9] = cell(rec?.summa, 9);
+  row[10] = cell(rec?.numberOfBill, 10);
+  row[11] = cell(rec?.dateOfBill, 11);
+  row[12] = cell(rec?.datePayment, 12);
+  row[13] = cell(rec?.contractor, 13);
+  row[14] = cell(rec?.driver, 14);
+  row[15] = cell(rec?.formPayHim, 16);
+  row[16] = cell(rec?.contractorRate, 17);
+  row[17] = cell(rec?.sumIssued, 18);
+  row[18] = cell(rec?.numberOfBillAdd, 19);
+  row[19] = cell(rec?.dateOfPaymentContractor, 20);
+  row[20] = cell(rec?.manager, 21);
+  row[21] = cell(rec?.departmentHead, 22);
+  row[22] = cell(rec?.clientLead, 23);
+  row[23] = cell(rec?.salesManager, 24);
+  row[24] = cell(rec?.additionalExpenses, 25);
+  row[25] = cell(rec?.income, 26); // edit access denied
+  row[26] = cell(rec?.incomeLearned, 27); // edit access denied
+  row[27] = { v: rec?.id ?? '', s: 'idcol' } // edit access denied
   return row;
 }
 
@@ -128,7 +153,7 @@ const showFallback = ref(true);
 const univerAPI = ref<any>(null);
 const dispose = ref<(() => void) | null>(null);
 
-const initializeUniver = (records: Record<string, any[]>) => {
+const initializeUniver = async (records: Record<string, any[]>) => {
   // clear prev example
   if (dispose.value) {
     dispose.value();
@@ -191,12 +216,15 @@ const initializeUniver = (records: Record<string, any[]>) => {
       cellData[r + 1] = buildRowCells(data[r]!);
     }
 
-    const { columnData, rowData } = autoFitColumnAndRowData(cellData, COLUMN_COUNT);
+    const { columnData, rowData } = autoFitColumnAndRowData(
+      cellData,
+      COLUMN_COUNT
+    );
 
     sheets[id] = {
       id,
       name: periodName,
-      tabColor: "#114011",
+      tabColor: "#009999",
       hidden: 0,
       rowCount: rows,
       columnCount: COLUMN_COUNT,
@@ -227,67 +255,31 @@ const initializeUniver = (records: Record<string, any[]>) => {
     resources: [{ name: "SHEET_DEFINED_NAME_PLUGIN", data: "" }],
   };
 
-  univerAPI.value.createWorkbook(
-    sheetOrder.length
-      ? workbook
-      : {
-          // fallback
-          id: "workbook-1",
-          sheetOrder: ["sheet-1"],
-          name: "<blank>",
-          styles: STYLES,
-          sheets: {
-            "sheet-1": {
-              id: "sheet-1",
-              name: "Пусто",
-              tabColor: "",
-              hidden: 0,
-              rowCount: 1,
-              columnCount: COLUMN_COUNT,
-              zoomRatio: 1,
-              freeze: { startRow: -1, startColumn: -1, ySplit: 0, xSplit: 0 },
-              scrollTop: 0,
-              scrollLeft: 0,
-              defaultColumnWidth: 80,
-              defaultRowHeight: 30,
-              mergeData: [],
-              cellData: {
-                0: Object.fromEntries(HEADERS.map((h, c) => [c, { v: h }])),
-              },
-              rowData: {},
-              columnData: Object.fromEntries(
-                Array.from({ length: COLUMN_COUNT }, (_, i) => [
-                  i,
-                  { w: 125, hd: 0 },
-                ])
-              ),
-              showGridlines: 1,
-              rowHeader: { width: 50, hidden: 0 },
-              columnHeader: { height: 20, hidden: 0 },
-              rightToLeft: 0,
-            },
-          },
-          resources: [{ name: "SHEET_DEFINED_NAME_PLUGIN", data: "" }],
-        }
-  );
+  univerAPI.value.createWorkbook(workbook);
 
+  await lockCells(univerAPI.value, Object.keys(sheets), {
+    columnCount: COLUMN_COUNT,
+    headerRow: 1,
+    lockColumns: [5, 26, 27, 28],
+    dataStartRow: 2
+  })
   return lifecycleDisposable;
 };
 
 watch(
   () => props.records,
-  (newRecords) => {
+  async (newRecords) => {
     if (Object.keys(newRecords).length > 0) {
       showFallback.value = true;
-      initializeUniver(newRecords);
+      await initializeUniver(newRecords);
     }
   },
   { deep: true, immediate: true }
 );
 
-onMounted(() => {
+onMounted(async () => {
   if (Object.keys(props.records).length > 0) {
-    initializeUniver(props.records);
+    await initializeUniver(props.records);
   }
 });
 
