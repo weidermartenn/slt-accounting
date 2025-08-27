@@ -32,7 +32,7 @@ import "@univerjs/preset-sheets-core/lib/index.css";
 import "@univerjs/sheets-ui/lib/index.css";
 import type { transportAccounting } from "~/entities/TransportAccountingDto/types";
 import { autoFitColumnAndRowData } from "~/utils/autoFit";
-import { lockCells, colLetter } from "~/utils/univer-protect";
+import { lockHeaders, lockColumn } from "~/utils/univer-protect";
 
 const props = defineProps<{
   records: Record<string, any[]>;
@@ -77,6 +77,7 @@ const STYLES: Record<string, IStyleData> = {
     tb: 3,
     ht: 1,
     vt: 2,
+    fs: 12,
     pd: {
       l: 4,
     },
@@ -95,7 +96,7 @@ const STYLES: Record<string, IStyleData> = {
     }
   },
   idcol: {
-    cl: { rgb: "#FFFFFF" },
+    cl: { rgb: "#DDDDDD" },
   },
   lockedCol: {
     bg: { rgb: "#DDDDDD"},
@@ -257,12 +258,13 @@ const initializeUniver = async (records: Record<string, any[]>) => {
 
   univerAPI.value.createWorkbook(workbook);
 
-  await lockCells(univerAPI.value, Object.keys(sheets), {
-    columnCount: COLUMN_COUNT,
-    headerRow: 1,
-    lockColumns: [5, 26, 27, 28],
-    dataStartRow: 2
-  })
+  const sheetIds = Object.keys(sheets);
+  await lockHeaders(univerAPI.value, sheetIds, COLUMN_COUNT, 1);
+  await lockColumn(univerAPI.value, sheetIds, 5);
+  await lockColumn(univerAPI.value, sheetIds, 25);
+  await lockColumn(univerAPI.value, sheetIds, 26);
+  await lockColumn(univerAPI.value, sheetIds, 27);
+  await lockColumn(univerAPI.value, sheetIds, 28);
   return lifecycleDisposable;
 };
 

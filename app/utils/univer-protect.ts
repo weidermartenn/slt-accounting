@@ -1,42 +1,63 @@
-// функция для защиты заголовк и столбцов от редактирования
-
-// translate col number to letter
+// перевод номера колонки в буквы (28 -> 'AB')
 export const colLetter = (n: number) => {
-    let s = ''
-    while (n > 0) {
-        const m = (n - 1) % 26
-        s = String.fromCharCode(65 + m) + s
-        n = Math.floor((n - 1) / 26)
-    }
-    return s
+  let s = ''
+  while (n > 0) {
+    const m = (n - 1) % 26
+    s = String.fromCharCode(65 + m) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
 }
 
-export async function lockCells(
+// блокировка ТОЛЬКО строки заголовка
+export async function lockHeaders(
   univerAPI: any,
   sheetIds: string[],
-  {
-    columnCount,
-    headerRow = 1,
-    lockColumns = [5, 26, 27, 28],
-    dataStartRow = headerRow + 1
-  }: {
-    columnCount: number
-    headerRow?: number
-    lockColumns?: number[]
-    dataStartRow?: number
-  }
+  columnCount: number,
+  headerRow = 1
 ) {
-  const workbook = univerAPI.getActiveWorkbook()
-  if (!workbook) return
+  const wb = univerAPI.getActiveWorkbook()
+  if (!wb) return
 
-  const permission = workbook.getPermission?.() ?? univerAPI.getPermission?.()
-  if (!permission) return
+  const perm = wb.getPermission?.() ?? univerAPI.getPermission()
+  if (!perm) return
 
-  const point = permission.permissionPointsDefinition.RangeProtectionPermissionEditPoint
-  const unitId = workbook.getId()
+  const point = perm.permissionPointsDefinition.RangeProtectionPermissionEditPoint
+  const unitId = wb.getId()
+  const lastCol = colLetter(columnCount) // напр. 'AB'
 
   for (const sid of sheetIds) {
-    const sheet = workbook.getSheetBySheetId?.(sid) || workbook.getActiveSheet()
+    const sheet = wb.getSheetBySheetId?.(sid) || wb.getActiveSheet()
+    if (!sheet) continue
+
+    const subUnitId = sheet.getSheetId()
+    const range = sheet.getRange(`A${headerRow}:${lastCol}${headerRow}`) // вся строка заголовка
+
+    const { permissionId } = await perm.addRangeBaseProtection(unitId, subUnitId, [range])
+    // делаем диапазон нередактируемым
+    perm.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
+  }
+}
+
+export async function lockColumn(
+  univerAPI: any,
+  sheetIds: string[],
+  colNum: number,
+  dataStartRow = 2
+) {
+  const wb = univerAPI.getActiveWorkbook()
+  if (!wb) return
+
+  const perm = wb.getPermission?.() ?? univerAPI.getPermission()
+  if (!perm) return
+
+  const point = perm.permissionPointsDefinition.RangeProtectionPermissionEditPoint
+  const unitId = wb.getId()
+
+  const letter = colLetter(colNum)
+
+  for (const sid of sheetIds) {
+    const sheet = wb.getSheetBySheetId?.(sid) || wb.getActiveSheet()
     if (!sheet) continue
 
     const subUnitId = sheet.getSheetId()
@@ -46,22 +67,8 @@ export async function lockCells(
         ? cfg.rowCount
         : (typeof sheet.getRowCount === 'function' ? sheet.getRowCount() : 0)) || 100000
 
-    // 1) Лочим ТОЛЬКО строку заголовка (все колонки)
-    {
-      const headerRange = sheet.getRangeByRowCol(headerRow, 1, 1, columnCount)
-      const { permissionId } = await permission.addRangeBaseProtection(unitId, subUnitId, [headerRange])
-      permission.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
-    }
-
-    // 2) Лочим ТОЛЬКО указанные колонки с dataStartRow до конца
-    const rowSpan = Math.max(0, lastRow - dataStartRow + 1)
-    if (rowSpan > 0) {
-      for (const colNum of lockColumns) {
-        if (colNum < 1 || colNum > columnCount) continue
-        const colRange = sheet.getRangeByRowCol(dataStartRow, colNum, rowSpan, 1)
-        const { permissionId } = await permission.addRangeBaseProtection(unitId, subUnitId, [colRange])
-        permission.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
-      }
-    }
+    const range = sheet.getRange(`${letter}${dataStartRow}:${letter}${lastRow}`)
+    const { permissionId } = await perm.addRangeBaseProtection(unitId, subUnitId, [range])
+    perm.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
   }
 }
