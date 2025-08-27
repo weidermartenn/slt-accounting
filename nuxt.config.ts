@@ -5,7 +5,7 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/main.css'],
   ui: {
-    colorMode: false
+    colorMode: true
   },
   pinia: {
     storesDirs: ['./stores']

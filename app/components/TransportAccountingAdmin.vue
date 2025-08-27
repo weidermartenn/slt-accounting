@@ -5,7 +5,7 @@
       class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10"
     >
       <div class="text-center">
-        <UIcon name="i-lucide-loader" class="w-10 h-10 animate-spin" />
+        <UIcon name="i-lucide-loader-pinwheel" class="w-10 h-10 animate-spin" />
         <p class="mt-2 text-lg font-medium">Загрузка данных таблицы</p>
       </div>
     </div>
