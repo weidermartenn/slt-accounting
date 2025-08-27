@@ -3,10 +3,9 @@
     <div v-cloak>
       <ClientOnly>
         <div class="flex justify-end p-2 border-b">
-          <UButton class="cursor-pointer" @click="getAllRecords" variant="ghost" color="error">Получить по ебалу</UButton>
           <UButton class="cursor-pointer" @click="logout" variant="ghost" color="error">Выйти из аккаунта</UButton>
         </div>
-        <UniverSheet />
+        <TransportAccountingAdmin :records="records"/>
         <template #fallback>
           <div
             class="h-screen flex items-center justify-center gap-3 px-4 py-3"
@@ -34,7 +33,7 @@ useHead({
     },
   ],
 });
-
+import { TransportAccountingAdmin } from '#components';
 import { useSheetStore } from '~~/stores/sheet/store';
 
 const store = useSheetStore()
@@ -48,17 +47,8 @@ const logout = async () => {
     })
 }
 
-const getAllRecords = async () => {
-    await $fetch('/api/admin/records', {
-        method: 'GET'
-    }).then((res: any) => {
-        console.log(res)
-    })
-}
-
 onMounted(() => {
-store.fetchAll()
-console.log(records.value)
+  store.fetchAll()
 })
 </script>
 

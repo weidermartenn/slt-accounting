@@ -18,17 +18,12 @@ export const useSheetStore = defineStore('sheet', {
             this.loading = true
             this.error = ''
             try {
-                console.log("Начало")
                 const data = await $fetch<transportAccounting[]>('/api/admin/records', {
                     headers: process ? useRequestHeaders(['cookie']) : undefined
                 })
-                console.log("data: ", data)
                 // @ts-ignore
                 const obj = data?.object ?? data?.body?.object ?? {}
-                console.log("obj: ", obj)
                 this.records = { ...obj }
-                console.log("this.records: ", this.records)
-                console.log("Конец")
             } catch (e: any) {
                 this.error = e?.data?.statusMessage || e?.message || 'Ошибка загрузки'
                 throw e

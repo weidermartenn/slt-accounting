@@ -15,9 +15,9 @@ export interface transportAccounting {
     driver: string | '';
     formPayAs: string | '';
     formPayHim: string | '';
-    id: number | 0;
+    id: number;
     income: number | 0;
-    imcomeLearned: number | 0;
+    incomeLearned: number | 0;
     manager: string | '';
     numberOfBill: string | '';
     numberOfBillAdd: string | '';
