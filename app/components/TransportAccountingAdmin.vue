@@ -1,8 +1,8 @@
 <template>
-  <div class="relative" style="width: 100%; height: 94vh">
+  <div class="relative" style="width: 100%; height: 90vh">
     <div
       v-if="showFallback"
-      class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10"
+      class="absolute inset-0 flex items-center justify-center bg-white/90 z-10"
     >
       <div class="text-center">
         <UIcon name="i-lucide-loader-pinwheel" class="w-10 h-10 animate-spin" />
@@ -66,7 +66,6 @@ const HEADERS = [
   "Доп. расходы",
   "Доход",
   "Доход полученный",
-  "",
 ];
 
 const COLUMN_COUNT = 28;
@@ -74,6 +73,12 @@ const COLUMN_COUNT = 28;
 const STYLES: Record<string, IStyleData> = {
   hdr: {
     bg: { rgb: "#5CCCCC" },
+    bd: {
+      l: { s: 1, cl: { rgb: "#000000" } },
+      t: { s: 1, cl: { rgb: "#000000" } },
+      b: { s: 1, cl: { rgb: "#000000" } },
+      r: { s: 1, cl: { rgb: "#000000" } },
+    },
     tb: 3,
     ht: 1,
     vt: 2,
@@ -89,10 +94,10 @@ const STYLES: Record<string, IStyleData> = {
       l: 4,
     },
     bd: {
-      l: { s: 1, cl: { rgb: "#cccccc" } },
-      t: { s: 1, cl: { rgb: "#cccccc" } },
-      b: { s: 1, cl: { rgb: "#cccccc" } },
-      r: { s: 1, cl: { rgb: "#cccccc" } },
+      l: { s: 1, cl: { rgb: "#000000" } },
+      t: { s: 1, cl: { rgb: "#000000" } },
+      b: { s: 1, cl: { rgb: "#000000" } },
+      r: { s: 1, cl: { rgb: "#000000" } },
     }
   },
   idcol: {
@@ -276,7 +281,7 @@ watch(
       await initializeUniver(newRecords);
     }
   },
-  { deep: true, immediate: true }
+  { deep: false, immediate: true }
 );
 
 onMounted(async () => {
