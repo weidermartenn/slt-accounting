@@ -339,6 +339,12 @@ const initializeUniver = async (records: Record<string, any[]>) => {
   const sheetIds = Object.keys(sheets);
   await lockHeaders(univerAPI.value, sheetIds, COLUMN_COUNT, 1);
   await lockColumn(univerAPI.value, sheetIds, [5, 26, 27, 28], { headerRow: 1 });
+
+  const me: any = await $fetch('api/auth/me', {
+    headers: process ? useRequestHeaders(['cookie']) : undefined
+  })
+
+  await applyEditableRules(univerAPI.value, me.value?.roleCode || '')
   return lifecycleDisposable;
 };
 

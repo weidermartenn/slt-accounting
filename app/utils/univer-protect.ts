@@ -1,3 +1,4 @@
+import type { RoleCode } from "~/utils/roles"
 // перевод номера колонки в буквы (28 -> 'AB')
 export const colLetter = (n: number) => {
   let s = ''
@@ -77,3 +78,76 @@ export async function lockColumn(
     perm.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
   }
 }
+
+export function applyCellLocks(row: any, role: RoleCode) {
+  if (!row || typeof row !== 'object') return row
+
+  row.cells ||= {}
+  const ensureCell = (ci: number) => (row.cells[ci] = row.cells[ci] || {})
+
+  ensureCell(25).editable = false
+  ensureCell(26).editable = false
+
+  if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH') return row
+
+  const hasValue = (ci: number) => {
+    const c = row.cells[ci]
+    const raw = c?.v ?? c?.text
+    if (raw == null) return false
+    const s = String(raw).trim().toLowerCase()
+    return !(s === '' || s === 'null' || s === 'undefined' || s === 'nan' || s === 'false')
+  }
+
+  ensureCell(9).editable = !(hasValue(10) && hasValue(11))
+  ensureCell(16).editable = !hasValue(19)
+  ensureCell(24).editable = !hasValue(24)
+  ensureCell(4).editable = false
+
+  if ([4, 10, 11, 17, 19].every(hasValue)) {
+    for (let ci = 0; ci <= 26; ci++) {
+      if (ci === 24) continue 
+      ensureCell(ci).editable = false 
+    }
+    ensureCell(24).editable = !hasValue(24)
+  }
+
+  return row
+}
+
+export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
+  const rows = sheetModel?.data?.rows?._;
+  if (!rows) return 
+
+  const header = rows[0]
+  if (header) {
+    header.cells ||= {}
+    for (let ci = 0; ci <= 26; ci++) {
+      header.cells[ci] = header.cells[ci] || {}
+      header.cells[ci].editable = false
+    }
+  }
+
+  Object.keys(rows).forEach((ri) => {
+    if (ri === 'len') return
+    applyCellLocks(rows[ri], role)
+  })
+}
+
+export async function applyEditableRules(univerAPI: any, role: RoleCode) {
+  const workbook = univerAPI.getActiveWorkbook?.();
+  if (!workbook) return 
+
+  const sheets = workbook.getSheets?.() ?? []
+  for (const s of sheets) {
+    const snap = s.getSnapshot?.() ?? s.getModel?.() ?? s
+    if (snap?.data?.rows?._) {
+      applyLocksForSheet(snap, role)
+      if (typeof s.setSnapshot === 'function') s.setSnapshot(snap)
+      else if (typeof workbook.applySnapshot === 'function' && typeof workbook.getSnapShot === 'function') {
+        const wSnap = workbook.getSnapshot()
+        workbook.applySnapshot(wSnap)
+      }
+    }
+  }
+}
+
