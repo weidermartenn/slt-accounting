@@ -33,7 +33,8 @@ export default defineAppConfig({
         },
         slideover: {
             slots: {
-                content: 'bg-slate-100 border-none shadow-xs',
+                overlay: 'border-none',
+                content: 'bg-[#2d2d2d] border-none',
                 title: 'text-white text-highlighted font-semibold',
                 body: 'flex-1 overflow-y-auto p-4 sm:p-6',
                 close: 'absolute top-4 end-4 hover:bg-zinc-800 rounded-md p-1'

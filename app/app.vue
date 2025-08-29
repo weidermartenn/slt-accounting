@@ -1,9 +1,10 @@
 <template>
-    <NuxtLayout :name="layout">
-        <NuxtPage />
-    </NuxtLayout>
+  <NuxtLayout :name="layout">
+    <NuxtPage />
+  </NuxtLayout>
 </template>
 
 <script setup lang="ts">
-const layout = 'default'
+import { TooltipProvider } from "reka-ui";
+const layout = "default";
 </script>

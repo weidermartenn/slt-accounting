@@ -1,0 +1,32 @@
+import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
+
+export const COL2FIELD: Record<number, keyof TransportAccountingSR> = {
+    0: 'dateOfPickup',
+  1: 'numberOfContainer',
+  2: 'cargo',
+  3: 'typeOfContainer',
+  4: 'dateOfSubmission',
+  5: 'addressOfDelivery',
+  6: 'ourFirm',
+  7: 'client',
+  8: 'formPayAs',
+  9: 'summa',
+  10: 'numberOfBill',
+  11: 'dateOfBill',
+  12: 'datePayment',
+  13: 'contractor',
+  14: 'driver',
+  15: 'formPayHim',
+  16: 'contractorRate',
+  17: 'sumIssued',
+  18: 'numberOfBillAdd',
+  19: 'dateOfPaymentContractor',
+  20: 'manager',
+  21: 'clientLead',
+  22: 'departmentHead',
+  23: 'salesManager',
+  24: 'additionalExpenses',
+  25: 'income',
+  26: 'incomeLearned',
+  27: 'id'
+}

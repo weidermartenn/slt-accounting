@@ -2,7 +2,7 @@
   <UApp>
     <div v-cloak>
       <ClientOnly>
-        <TransportAccountingUser :records="records" />
+        <TransportAccountingAdmin :records="records" />
         <template #fallback>
           <div
             class="h-screen flex items-center justify-center gap-3 px-4 py-3"
@@ -23,22 +23,22 @@ definePageMeta({
 });
 
 useHead({
-  title: "ТУ - таблица",
+  title: "ТУ - таблица администратора",
   meta: [
     {
       name: "description",
-      content: "ТУ - таблица",
+      content: "ТУ - таблица администратора",
     },
   ],
 });
-import TransportAccountingUser from "~/components/TransportAccountingUser.vue";
+import { TransportAccountingAdmin } from "#components";
 import { useSheetStore } from "~/stores/sheet-store";
 
 const store = useSheetStore();
 const records = computed(() => store.records);
 
 onMounted(() => {
-  store.fetchAll();
+  store.fetchAllRoleAdmin();
 });
 </script>
 

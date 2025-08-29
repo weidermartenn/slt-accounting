@@ -10,27 +10,37 @@
                 class: 'absolute top-4 end-4'
             }"
         >
-            <UButton color="primary" variant="soft" class="w-12 h-10 flex justify-center cursor-pointer" icon="i-lucide-menu" />
-
+            <div class="v-row items-center gap-2">
+                <UButton color="info" variant="soft" class="w-12 h-10 flex justify-center cursor-pointer" icon="i-lucide-menu" />
+                <span>Главное меню</span>
+            </div>
+            
             <template #content>
                 <div class="p-6 pb-2">
-                    <h3 class="text-lg text-zinc-900 font-semibold">Меню</h3>
+                    <h3 class="text-lg text-zinc-100 font-semibold">Меню</h3>
                 </div>
                 <div class="v-col p-6 gap-4">
-                    <UButton @click="$router.push(item.to)" v-for="item in items" :key="item.id" class="slideover-button">
+                    <UButton @click="$router.push(item.to)" v-for="item in visibleItems" :key="item.id" class="slideover-button">
                         <UIcon :name="item.icon" class="h-18 w-18"/>
                         <span>{{ item.title }}</span>
                     </UButton>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="flex gap-4 items-center">
-                            <span class="text-sm font-medium">Темная тема</span>
-                            <USwitch unchecked-icon="i-lucide-sun" checked-icon="i-lucide-moon" size="xl" />
+                    <div v-if="isAdmin" class="v-col my-6 text-center">
+                        <span class="text-xl font-semibold text-white text-center">Администрирование</span>
+                        <div class="grid grid-cols-2 gap-4">
+                            <UButton @click="$router.push('/admin/employees')" class="slideover-button">
+                                <UIcon name="i-lucide-users" class="h-16 w-16"/>
+                                <span>Сотрудники</span>
+                            </UButton>
+                            <UButton @click="$router.push('/admin/sheet')" class="slideover-button">
+                                <UIcon name="i-lucide-clipboard-list" class="h-16 w-16"/>
+                                <span>Транспортный учет</span>
+                            </UButton>
                         </div>
-                        <UButton color="error" variant="soft">Выйти из аккаунта</UButton>
+                    </div>
+                    <div class="grid grid-cols-1 gap-4">
+                        <UButton :ui="{ base: 'justify-center h-12 text-md'}" color="error" variant="soft">Выйти из аккаунта</UButton>
                     </div>
                 </div>
-            </template>
-            <template #footer>
             </template>
         </USlideover>
     </header>
@@ -38,26 +48,39 @@
 </template>
 
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
+type Role = 'user' | 'admin'
+type Item = {
+    id: number;
+    title: string;
+    icon: string;
+    to: string;
+    role: Role
+}
 
-const items = [
+const items: Item[] = [
     {
         id: 1,
         title: 'Личный кабинет',
         icon: 'i-lucide-user',
-        to: '/'
+        to: '/',
+        role: 'user'
     },
     {
         id: 2,
         title: 'Транспортный учет',
-        icon: 'i-lucide-truck',
-        to: '/sheet'
+        icon: 'i-lucide-notebook-tabs',
+        to: '/sheet',
+        role: 'user'
     }
 ]
-</script>
 
-<style lang="scss">
-:deep(.slideover-button) {
-    @apply v-col p-4 bg-zinc-300 text-zinc-200 cursor-pointer hover:bg-zinc-700 hover:text-zinc-50 active:bg-zinc-700 duration-150;
-}
-</style>
+const { data: me } = await useFetch<{ confirmed?: boolean; roleCode?: string } | null>('/api/auth/me', {
+    headers: process ? useRequestHeaders(['cookie']) : undefined
+})
+
+const isAdmin = computed(() => me.value?.roleCode === 'ROLE_ADMIN')
+
+const visibleItems = computed(() => 
+    items.filter(i => i.role !== 'admin' || isAdmin.value)
+)
+</script>

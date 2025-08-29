@@ -1,4 +1,4 @@
-export interface TransportAccounting {
+export interface TransportAccountingSR {
     additionalExpenses: number | 0;
     addressOfDelivery: string | '';
     cargo: string | '';

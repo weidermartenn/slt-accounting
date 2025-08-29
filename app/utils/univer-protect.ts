@@ -24,7 +24,7 @@ export async function lockHeaders(
 
   const point = perm.permissionPointsDefinition.RangeProtectionPermissionEditPoint
   const unitId = wb.getId()
-  const lastCol = colLetter(columnCount) // напр. 'AB'
+  const lastCol = colLetter(columnCount)
 
   for (const sid of sheetIds) {
     const sheet = wb.getSheetBySheetId?.(sid) || wb.getActiveSheet()
@@ -34,7 +34,6 @@ export async function lockHeaders(
     const range = sheet.getRange(`A${headerRow}:${lastCol}${headerRow}`) // вся строка заголовка
 
     const { permissionId } = await perm.addRangeBaseProtection(unitId, subUnitId, [range])
-    // делаем диапазон нередактируемым
     perm.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
   }
 }
@@ -42,9 +41,12 @@ export async function lockHeaders(
 export async function lockColumn(
   univerAPI: any,
   sheetIds: string[],
-  colNum: number,
-  dataStartRow = 2
+  columns: number[],
+  opts?: { headerRow?: number; dataStartRow?: number }
 ) {
+  const headerRow = opts?.headerRow ?? 1
+  const dataStartRow = Math.max(headerRow + 1, opts?.dataStartRow ?? headerRow + 1)
+
   const wb = univerAPI.getActiveWorkbook()
   if (!wb) return
 
@@ -53,8 +55,6 @@ export async function lockColumn(
 
   const point = perm.permissionPointsDefinition.RangeProtectionPermissionEditPoint
   const unitId = wb.getId()
-
-  const letter = colLetter(colNum)
 
   for (const sid of sheetIds) {
     const sheet = wb.getSheetBySheetId?.(sid) || wb.getActiveSheet()
@@ -67,8 +67,13 @@ export async function lockColumn(
         ? cfg.rowCount
         : (typeof sheet.getRowCount === 'function' ? sheet.getRowCount() : 0)) || 100000
 
-    const range = sheet.getRange(`${letter}${dataStartRow}:${letter}${lastRow}`)
-    const { permissionId } = await perm.addRangeBaseProtection(unitId, subUnitId, [range])
+    const ranges = columns
+        .filter(c => c >= 1)
+        .map(c => sheet.getRange?.(`${colLetter(c)}${dataStartRow}:${colLetter(c)}${lastRow}`))
+        .filter(Boolean)
+    
+    if (ranges.length === 0) continue
+    const { permissionId } = await perm.addRangeBaseProtection(unitId, subUnitId, ranges) 
     perm.setRangeProtectionPermissionPoint(unitId, subUnitId, permissionId, point, false)
   }
 }
