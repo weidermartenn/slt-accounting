@@ -74,9 +74,8 @@ const items: Item[] = [
     }
 ]
 
-const { data: me } = await useFetch<{ confirmed?: boolean; roleCode?: string } | null>('/api/auth/me', {
-    headers: process ? useRequestHeaders(['cookie']) : undefined
-})
+const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+const { data: me } = await useFetch<{ confirmed?: boolean; roleCode?: string } | null>('/api/auth/me', { headers })
 
 const isAdmin = computed(() => me.value?.roleCode === 'ROLE_ADMIN')
 

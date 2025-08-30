@@ -15,9 +15,6 @@ export default defineNuxtConfig({
     css: {
       devSourcemap: false
     },
-    define: {
-      'process.env': JSON.stringify({})
-    }
   },
   ui: {
     colorMode: true
@@ -27,8 +24,8 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
-      kingsApiBase: process.env.NUXT_KINGS_API_BASE || 'https://kings-logix.ru/api',
-      sltApiBase: process.env.NUXT_SLT_API_BASE || 'http://77.222.43.243:8080/api'
+      kingsApiBase: 'https://kings-logix.ru/api',
+      sltApiBase: 'http://77.222.43.243:8080/api'
     }
   },
   app: {

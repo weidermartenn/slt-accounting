@@ -175,7 +175,7 @@ async function waitContainerReady(id = "univer") {
 
   if (el.clientWidth > 0 && el.clientHeight > 0) return;
   await new Promise<void>((resolve) => {
-    const ro = new ResizeObserver((entries) => {
+    const ro = new ResizeObserver((entries: any) => {
       const { width, height } = entries[0].contentRect;
       if (width > 0 && height > 0) {
         ro.disconnect();
@@ -235,6 +235,7 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     const id = `sheet-${++i}`;
     const data = Array.isArray(items) ? items : ([] as TransportAccounting[]);
     const rows = Math.max(1, data.length + 1);
+    const rowsToAdd = 1000;
 
     // sheet header
     const headerRow: Record<number, { v: any; s?: string }> = {};
@@ -251,6 +252,14 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       cellData[r + 1] = buildRowCells(data[r]!);
     }
 
+    for (let r = data.length + 1; r < data.length + 1 + rowsToAdd; r++) {
+      const emptyRow: Record<number, { v: any }> = {};
+      for (let c = 0; c < COLUMN_COUNT; c++) {
+        emptyRow[c] = { v: "" };
+      }
+      cellData[r] = emptyRow;
+    }
+
     const { columnData, rowData } = autoFitColumnAndRowData(
       cellData,
       COLUMN_COUNT
@@ -261,7 +270,6 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       name: periodName,
       tabColor: "#009999",
       hidden: 0,
-      rowCount: Math.max(2, rows + 1),
       columnCount: COLUMN_COUNT,
       zoomRatio: 1,
       freeze: { startRow: 1, startColumn: 0, ySplit: 1, xSplit: 0 },
