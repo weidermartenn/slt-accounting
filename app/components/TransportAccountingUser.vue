@@ -36,7 +36,7 @@ import { HEADERS } from "./attributes/headers";
 import { type SavePayload, saveSchema } from "./attributes/save-schema";
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
 import { autoFitColumnAndRowData } from "~/utils/autoFit";
-import { lockHeaders, lockColumn } from "~/utils/univer-protect";
+import { lockHeaders, lockColumn, colLetter, applyEditableRules } from "~/utils/univer-protect";
 import { COL2FIELD } from "./attributes/col2field";
 import appConfig from "~/app.config";
 
@@ -103,13 +103,20 @@ function readRowValues(sheet: any, row0: number): any[] {
 
 function toPayload(values: any[]): SavePayload {
   const draft: any = { taxes: 0 };
+
   for (let c = 0; c < COLUMN_COUNT; c++) {
     const key = COL2FIELD[c];
     if (!key) continue;
+
     draft[key] = values[c] ?? (key === "id" ? 0 : "");
   }
 
-  return saveSchema.parse(draft);
+  try {
+    return saveSchema.parse(draft);
+  } catch (err) {
+    throw new Error("Некорректные данные", { cause: err });
+  }
+
 }
 
 const timers = new Map<string, number>();
@@ -130,6 +137,8 @@ async function scheduleSave(sheet: any, row0: number) {
       });
       const values = readRowValues(sheet, row0);
       const payload = toPayload(values);
+
+      console.log(payload);
 
       const isEmpty = Object.entries(payload).every(([k, v]) =>
         k === "id" ? v === 0 : v === "" || v === 0
@@ -157,7 +166,7 @@ async function scheduleSave(sheet: any, row0: number) {
       });
       console.error(e);
     }
-  }, 3000);
+  }, 5000);
   timers.set(key, t);
 }
 
@@ -349,7 +358,7 @@ const initializeUniver = async (records: Record<string, any[]>) => {
   await lockColumn(univerAPI.value, sheetIds, [5, 26, 27, 28], { headerRow: 1 });
 
   const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
-  const me: any = await $fetch('api/auth/me', { headers })
+  const me: any = await $fetch('/api/auth/me', { headers })
 
   await applyEditableRules(univerAPI.value, me.value?.roleCode || '')
   return lifecycleDisposable;

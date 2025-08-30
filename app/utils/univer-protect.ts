@@ -1,4 +1,5 @@
 import type { RoleCode } from "~/utils/roles"
+
 // перевод номера колонки в буквы (28 -> 'AB')
 export const colLetter = (n: number) => {
   let s = ''
@@ -79,6 +80,14 @@ export async function lockColumn(
   }
 }
 
+/**
+ * per-cell правила
+ * всегда блокируются 25 и 26 колонки
+ * для ROLE_ADMIN, ROLE_BUH - все доступно
+ * точечные editable: 9, 16, 24
+ * 4 - нельзя редактировать
+ * если 4, 10, 11, 17, 19 заполнены - строка блокируется, кроме 24
+ */
 export function applyCellLocks(row: any, role: RoleCode) {
   if (!row || typeof row !== 'object') return row
 
@@ -114,18 +123,10 @@ export function applyCellLocks(row: any, role: RoleCode) {
   return row
 }
 
+// применить правила к строкам
 export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
   const rows = sheetModel?.data?.rows?._;
   if (!rows) return 
-
-  const header = rows[0]
-  if (header) {
-    header.cells ||= {}
-    for (let ci = 0; ci <= 26; ci++) {
-      header.cells[ci] = header.cells[ci] || {}
-      header.cells[ci].editable = false
-    }
-  }
 
   Object.keys(rows).forEach((ri) => {
     if (ri === 'len') return
@@ -133,6 +134,7 @@ export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
   })
 }
 
+// применить правила для всех листов активной книги
 export async function applyEditableRules(univerAPI: any, role: RoleCode) {
   const workbook = univerAPI.getActiveWorkbook?.();
   if (!workbook) return 

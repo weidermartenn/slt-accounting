@@ -1,5 +1,5 @@
 export interface TransportAccountingSR {
-    additionalExpenses: number | 0;
+    additionalExpenses: string | '';
     addressOfDelivery: string | '';
     cargo: string | '';
     client: string | '';
@@ -15,9 +15,9 @@ export interface TransportAccountingSR {
     driver: string | '';
     formPayAs: string | '';
     formPayHim: string | '';
-    id: number;
-    income: number | 0;
-    incomeLearned: number | 0;
+    id: 0;
+    income: string | '';
+    incomeLearned: string | '';
     manager: string | '';
     numberOfBill: string | '';
     numberOfBillAdd: string | '';
@@ -26,6 +26,6 @@ export interface TransportAccountingSR {
     salesManager: string | '';
     sumIssued: string | '';
     summa: string | '';
-    taxes: number | 0;
+    taxes: string | '';
     typeOfContainer: string | '';
 }

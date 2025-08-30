@@ -1,35 +1,40 @@
 import z from "zod";
 
+// Вспомогательная функция для строковых полей
+const stringField = (required: boolean = false, message: string = 'Обязательное поле') => {
+  const field = z.coerce.string();
+  return required ? field.min(1, message) : field.optional().default('');
+};
+
 export const saveSchema = z.object({
-    id: z.coerce.number().min(0).default(0),
-  dateOfPickup: z.string().min(1),
-  numberOfContainer: z.string().min(1),
-  cargo: z.string().min(1),
-  typeOfContainer: z.string().min(1),
-  dateOfSubmission: z.string().optional().default(''),
-  addressOfDelivery: z.string().optional().default(''),
-  ourFirm: z.string().optional().default(''),
-  client: z.string().optional().default(''),
-  formPayAs: z.string().optional().default(''),
-  summa: z.string().optional().default(''),
-  numberOfBill: z.string().optional().default(''),
-  dateOfBill: z.string().optional().default(''),
-  datePayment: z.string().optional().default(''),
-  contractor: z.string().optional().default(''),
-  driver: z.string().optional().default(''),
-  formPayHim: z.string().optional().default(''),
-  contractorRate: z.string().optional().default(''),
-  sumIssued: z.string().optional().default(''),
-  numberOfBillAdd: z.string().optional().default(''),
-  dateOfPaymentContractor: z.string().optional().default(''),
-  manager: z.string().optional().default(''),
-  clientLead: z.string().optional().default(''),
-  departmentHead: z.string().optional().default(''),
-  salesManager: z.string().optional().default(''),
+  dateOfPickup: stringField(true, "Укажите дату"),
+  numberOfContainer: stringField(true, "Обязательное поле"),
+  cargo: stringField(true, "Обязательное поле"),
+  typeOfContainer: stringField(true, "Обязательное поле"),
+  dateOfSubmission: stringField(),
+  addressOfDelivery: stringField(),
+  ourFirm: stringField(),
+  client: stringField(),
+  formPayAs: stringField(),
+  summa: stringField(),
+  numberOfBill: stringField(),
+  dateOfBill: stringField(),
+  datePayment: stringField(),
+  contractor: stringField(),
+  driver: stringField(),
+  formPayHim: stringField(),
+  contractorRate: stringField(),
+  sumIssued: stringField(),
+  numberOfBillAdd: stringField(),
+  dateOfPaymentContractor: stringField(),
+  manager: stringField(),
+  clientLead: stringField(),
+  departmentHead: stringField(),
+  salesManager: stringField(),
   additionalExpenses: z.coerce.number().min(0).default(0),
   income: z.coerce.number().min(0).default(0),
   incomeLearned: z.coerce.number().min(0).default(0),
   taxes: z.coerce.number().min(0).default(0)
-})
+});
 
-export type SavePayload = z.infer<typeof saveSchema>
+export type SavePayload = z.infer<typeof saveSchema>;
