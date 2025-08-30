@@ -16,6 +16,7 @@ export interface TransportAccountingSR {
     formPayAs: string | '';
     formPayHim: string | '';
     id: 0;
+    listName: string;
     income: string | '';
     incomeLearned: string | '';
     manager: string | '';

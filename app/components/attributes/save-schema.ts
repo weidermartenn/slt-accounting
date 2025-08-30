@@ -31,10 +31,10 @@ export const saveSchema = z.object({
   clientLead: stringField(),
   departmentHead: stringField(),
   salesManager: stringField(),
-  additionalExpenses: z.coerce.number().min(0).default(0),
-  income: z.coerce.number().min(0).default(0),
-  incomeLearned: z.coerce.number().min(0).default(0),
-  taxes: z.coerce.number().min(0).default(0)
+  additionalExpenses: stringField(),
+  income: stringField(),
+  incomeLearned: stringField(),
+  taxes: stringField()
 });
 
 export type SavePayload = z.infer<typeof saveSchema>;

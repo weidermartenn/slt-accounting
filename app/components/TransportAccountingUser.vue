@@ -1,5 +1,6 @@
 <template>
   <div class="relative" style="width: 100%; height: 90vh">
+    <!-- Оверлей-лоадер -->
     <div
       v-if="showFallback"
       class="absolute inset-0 flex items-center justify-center bg-white/90 z-10"
@@ -9,281 +10,235 @@
         <p class="mt-2 text-lg font-medium">Загрузка данных таблицы</p>
       </div>
     </div>
+
+    <!-- Индикатор сохранения -->
     <div
-      id="univer"
-      :class="{ 'opacity-0': showFallback }"
-      style="width: 100%; height: 100%"
-    ></div>
+      v-if="showSaving"
+      class="absolute right-5 -top-14 z-50 flex items-center bg-blue-600 text-white rounded-full px-4 py-2 shadow"
+    >
+      <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
+      <span class="ml-2">Сохраняем…</span>
+    </div>
+
+    <button @click="getName" class="cursor-pointer">get name</button>
+
+    <!-- Контейнер Univer -->
+    <div id="univer" :class="{ 'opacity-0': showFallback }" style="width: 100%; height: 100%" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { UniverSheetsCorePreset } from "@univerjs/preset-sheets-core";
-import UniverPresetSheetsCoreRuRU from "@univerjs/preset-sheets-core/locales/ru-RU";
-import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
-import {
-  createUniver,
-  LocaleType,
-  mergeLocales,
-  NAMED_STYLE_SPACE_MAP,
-  type IStyleData,
-} from "@univerjs/presets";
-import "@univerjs/preset-sheets-core/lib/index.css";
-import "@univerjs/sheets-ui/lib/index.css";
-import { z } from "zod";
-import { STYLES } from "./attributes/styles";
-import { HEADERS } from "./attributes/headers";
-import { type SavePayload, saveSchema } from "./attributes/save-schema";
-import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
-import { autoFitColumnAndRowData } from "~/utils/autoFit";
-import { lockHeaders, lockColumn, colLetter, applyEditableRules } from "~/utils/univer-protect";
-import { COL2FIELD } from "./attributes/col2field";
-import appConfig from "~/app.config";
+import { convertPositionCellToSheetOverGrid, UniverSheetsCorePreset } from '@univerjs/preset-sheets-core'
+import UniverPresetSheetsCoreRuRU from '@univerjs/preset-sheets-core/locales/ru-RU'
+import UniverPresetSheetsCoreEnUS from '@univerjs/preset-sheets-core/locales/en-US'
+import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets'
+import '@univerjs/preset-sheets-core/lib/index.css'
+import '@univerjs/sheets-ui/lib/index.css'
 
-const props = defineProps<{
-  records: Record<string, any[]>;
-}>();
+import { STYLES } from './attributes/styles'
+import { HEADERS } from './attributes/headers'
+import type { TransportAccounting } from '~/entities/TransportAccountingDto/types'
+import { autoFitColumnAndRowData } from '~/utils/autoFit'
+import { lockHeaders, lockColumn, colLetter, applyEditableRules } from '~/utils/univer-protect'
+import { COL2FIELD } from './attributes/col2field'
 
-const isEmpty = computed(() => {
-  const rec = props.records || {};
-  const keys = Object.keys(rec);
-  if (keys.length === 0) return true;
-  return keys.every((k) => Array.isArray(rec[k]) && rec[k].length === 0);
-});
+const props = defineProps<{ records: Record<string, any[]> }>()
+const toast = useToast()
 
-const COLUMN_COUNT = 28;
-const LOCKED_COLS = [4, 25, 26, 27];
+// Константы/состояние
+const COLUMN_COUNT = HEADERS.length
+const LOCKED_COLS = [4, 25, 26, 27] // 0-based: 5(E), 26(Z), 27(AA), 28(AB)
+const SAVE_DEBOUNCE_MS = 3000
+const SAVING_MIN_VISIBLE_MS = 800
+
+const showFallback = ref(true)
+const showSaving = ref(false)
+const univerAPI = ref<any>(null)
+let disposeCmd: any
+let currentRoleCode = ''
+const timers = new Map<string, number>()
+
+/* ===== helpers ===== */
+function waitContainerReady(id = 'univer') {
+  return new Promise<void>(async (resolve, reject) => {
+    await nextTick()
+    const el = document.getElementById(id)
+    if (!el) return reject(new Error('#univer not found'))
+    if (el.clientWidth > 0 && el.clientHeight > 0) return resolve()
+    const ro = new ResizeObserver((entries: any) => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) { ro.disconnect(); resolve() }
+    })
+    ro.observe(el)
+  })
+}
 
 function buildRowCells(rec: TransportAccounting) {
   const cell = (v: any, col: number) =>
-    ({ v: v ?? "", s: LOCKED_COLS.includes(col) ? "lockedCol" : "allrows" } as {
-      v: any;
-      s: string;
-    });
-  const row: Record<number, { v: any; s: string }> = {};
-  row[0] = cell(rec?.dateOfPickup, 0);
-  row[1] = cell(rec?.numberOfContainer, 1);
-  row[2] = cell(rec?.cargo, 2);
-  row[3] = cell(rec?.typeOfContainer, 3);
-  row[4] = cell(rec?.dateOfSubmission, 4); // edit access denied
-  row[5] = cell(rec?.addressOfDelivery, 5);
-  row[6] = cell(rec?.ourFirm, 6);
-  row[7] = cell(rec?.client, 7);
-  row[8] = cell(rec?.formPayAs, 8);
-  row[9] = cell(rec?.summa, 9);
-  row[10] = cell(rec?.numberOfBill, 10);
-  row[11] = cell(rec?.dateOfBill, 11);
-  row[12] = cell(rec?.datePayment, 12);
-  row[13] = cell(rec?.contractor, 13);
-  row[14] = cell(rec?.driver, 14);
-  row[15] = cell(rec?.formPayHim, 16);
-  row[16] = cell(rec?.contractorRate, 17);
-  row[17] = cell(rec?.sumIssued, 18);
-  row[18] = cell(rec?.numberOfBillAdd, 19);
-  row[19] = cell(rec?.dateOfPaymentContractor, 20);
-  row[20] = cell(rec?.manager, 21);
-  row[21] = cell(rec?.departmentHead, 22);
-  row[22] = cell(rec?.clientLead, 23);
-  row[23] = cell(rec?.salesManager, 24);
-  row[24] = cell(rec?.additionalExpenses, 25);
-  row[25] = cell(rec?.income, 26); // edit access denied
-  row[26] = cell(rec?.incomeLearned, 27); // edit access denied
-  row[27] = { v: rec?.id ?? "", s: "idcol" }; // edit access denied
-  return row;
+    ({ v: v ?? '', s: LOCKED_COLS.includes(col) ? 'lockedCol' : 'allrows' } as { v: any; s: string })
+  const row: Record<number, { v: any; s: string }> = {}
+  row[0]  = cell(rec?.dateOfPickup, 0)
+  row[1]  = cell(rec?.numberOfContainer, 1)
+  row[2]  = cell(rec?.cargo, 2)
+  row[3]  = cell(rec?.typeOfContainer, 3)
+  row[4]  = cell(rec?.dateOfSubmission, 4)
+  row[5]  = cell(rec?.addressOfDelivery, 5)
+  row[6]  = cell(rec?.ourFirm, 6)
+  row[7]  = cell(rec?.client, 7)
+  row[8]  = cell(rec?.formPayAs, 8)
+  row[9]  = cell(rec?.summa, 9)
+  row[10] = cell(rec?.numberOfBill, 10)
+  row[11] = cell(rec?.dateOfBill, 11)
+  row[12] = cell(rec?.datePayment, 12)
+  row[13] = cell(rec?.contractor, 13)
+  row[14] = cell(rec?.driver, 14)
+  row[15] = cell(rec?.formPayHim, 15)
+  row[16] = cell(rec?.contractorRate, 16)
+  row[17] = cell(rec?.sumIssued, 17)
+  row[18] = cell(rec?.numberOfBillAdd, 18)
+  row[19] = cell(rec?.dateOfPaymentContractor, 19)
+  row[20] = cell(rec?.manager, 20)
+  row[21] = cell(rec?.departmentHead, 21)
+  row[22] = cell(rec?.clientLead, 22)
+  row[23] = cell(rec?.salesManager, 23)
+  row[24] = cell(rec?.additionalExpenses, 24)
+  row[25] = cell(rec?.income, 25)
+  row[26] = cell(rec?.incomeLearned, 26)
+  row[27] = { v: rec?.id ?? '', s: 'idcol' }
+  return row
+}
+
+const getName = () => {
+  const wb = univerAPI.value.getActiveWorkbook()
+  const sheet = wb.getActiveSheet()
+  const snap = sheet.getSheet().getSnapshot()
+  
+  if (snap.name) return snap.name
+  return 'Транспортный учет'
 }
 
 function readRowValues(sheet: any, row0: number): any[] {
-  const row1 = row0 + 1;
-  const lastCol = colLetter(COLUMN_COUNT);
-  const a1 = `A${row1}:${lastCol}${row1}`;
-
-  const vals2d = sheet.getRange?.(a1)?.getValues?.() || [];
-  return vals2d[0] || new Array(COLUMN_COUNT).fill("");
+  const row1 = row0 + 1
+  const last = colLetter(COLUMN_COUNT)
+  const a1 = `A${row1}:${last}${row1}`
+  const vals2d = sheet.getRange?.(a1)?.getValues?.() || []
+  return vals2d[0] || Array.from({ length: COLUMN_COUNT }, () => '')
 }
 
-function toPayload(values: any[]): SavePayload {
-  const draft: any = { taxes: 0 };
+function toDto(values: any[], listName: string) {
+  const draft: Record<string, any> = { listName }
 
   for (let c = 0; c < COLUMN_COUNT; c++) {
-    const key = COL2FIELD[c];
-    if (!key) continue;
-
-    draft[key] = values[c] ?? (key === "id" ? 0 : "");
+    const key = COL2FIELD[c]; 
+    if (!key) continue 
+    draft[key] = values[c] ?? (key === 'id' ? 0 : '')
   }
 
-  try {
-    return saveSchema.parse(draft);
-  } catch (err) {
-    throw new Error("Некорректные данные", { cause: err });
+  for (const k in draft) {
+    const v = draft[k]
+    draft[k] = (v == null ? '' : String(v).replace(/\r?\n/g, '').trim())
   }
-
+  draft.id = Number(draft.id) || 0 
+  return draft
 }
 
-const timers = new Map<string, number>();
-
-async function scheduleSave(sheet: any, row0: number) {
-  const key = `${sheet.getSheetId?.()}::${row0}`;
-  if (timers.has(key)) {
-    clearTimeout(timers.get(key)!);
-    timers.delete(key);
+function toPayload(values: any[]) {
+  // backend save-модель хочет строки (включая числовые поля), id — число
+  const draft: Record<string, any> = { taxes: '', income: '', incomeLearned: '' }
+  for (let c = 0; c < COLUMN_COUNT; c++) {
+    const key = COL2FIELD[c]; if (!key) continue
+    draft[key] = values[c] ?? (key === 'id' ? 0 : '')
   }
+  // нормализуем строки и id
+  for (const k in draft) {
+    const v = draft[k]
+    draft[k] = (v == null ? '' : String(v).replace(/\r?\n/g, '').trim())
+  }
+  draft.id = Number(draft.id) || 0
+  return draft
+}
+
+/* ===== автосохранение (дебаунс + индикатор) ===== */
+function scheduleSave(sheet: any, row0: number) {
+  const key = `${sheet.getSheetId?.()}::${row0}`
+  if (timers.has(key)) { clearTimeout(timers.get(key)!); timers.delete(key) }
 
   const t = window.setTimeout(async () => {
+    const started = performance.now()
+    showSaving.value = true
     try {
-      const saving = toast.add({
-        title: "Сохраняем данные",
-        icon: "i-lucide-loader-circle",
-        color: "info",
-      });
-      const values = readRowValues(sheet, row0);
-      const payload = toPayload(values);
+      const values = readRowValues(sheet, row0)
+      const listName = getName()
+      const dto = toDto(values, listName)
 
-      console.log(payload);
-
-      const isEmpty = Object.entries(payload).every(([k, v]) =>
-        k === "id" ? v === 0 : v === "" || v === 0
-      );
-      if (isEmpty) {
-        toast.remove(saving.id);
-        return;
+      const empty = Object.entries(dto).every(([k, v]) => (k === 'id' ? v === 0 : v === '' || k === 'listName'))
+      if (!empty) {
+        // серверный handler теперь принимает и массив, и обёртки — но шлём как массив (как требует бэкенд)
+        await $fetch('/api/worktable/record-add', { method: 'POST', body: [dto] })
       }
-
-      await $fetch("/api/worktable/record-add", {
-        method: "POST",
-        body: { data: payload },
-      });
-
-      toast.update(saving.id, {
-        title: "Данные сохранены",
-        icon: "i-lucide-check",
-        color: "success",
-      });
+      console.log('Сохранено', dto)
     } catch (e: any) {
-      toast.add({
-        title: "Не удалось сохранить данные",
-        description: e?.data?.statusMessage || e?.message,
-        color: "error",
-      });
-      console.error(e);
+      toast.add({ title: 'Не удалось сохранить данные', description: e?.data?.statusMessage || e?.message, color: 'error' })
+      console.error(e)
+    } finally {
+      const elapsed = performance.now() - started
+      const rest = Math.max(0, SAVING_MIN_VISIBLE_MS - elapsed)
+      if (rest) await new Promise(res => setTimeout(res, rest))
+      showSaving.value = false
     }
-  }, 5000);
-  timers.set(key, t);
+  }, SAVE_DEBOUNCE_MS)
+
+  timers.set(key, t)
 }
 
-const showFallback = ref(true);
-const univerAPI = ref<any>(null);
-const dispose = ref<(() => void) | null>(null);
-let disposeCmd: any;
-
-const toast = useToast();
-
-async function waitContainerReady(id = "univer") {
-  await nextTick();
-  const el = document.getElementById(id);
-  if (!el) throw new Error("#univer not found");
-
-  if (el.clientWidth > 0 && el.clientHeight > 0) return;
-  await new Promise<void>((resolve) => {
-    const ro = new ResizeObserver((entries: any) => {
-      const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) {
-        ro.disconnect();
-        resolve();
-      }
-    });
-    ro.observe(el);
-  });
-}
-
+/* ===== инициализация Univer ===== */
 const initializeUniver = async (records: Record<string, any[]>) => {
-  // clear prev example
-  if (dispose.value) {
-    dispose.value();
-    dispose.value = null;
-    univerAPI.value = null;
-  }
+  await waitContainerReady('univer')
 
-  await waitContainerReady("univer");
-
-  const result = createUniver({
+  const { univerAPI: api } = createUniver({
     locale: LocaleType.RU_RU,
     locales: {
       [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS),
-      [LocaleType.RU_RU]: mergeLocales(UniverPresetSheetsCoreRuRU),
+      [LocaleType.RU_RU]: mergeLocales(UniverPresetSheetsCoreRuRU)
     },
-    presets: [
-      UniverSheetsCorePreset({
-        container: "univer",
-        ribbonType: "simple",
-      }),
-    ],
-  });
+    presets: [UniverSheetsCorePreset({ container: 'univer', ribbonType: 'simple' })]
+  })
+  univerAPI.value = api
 
-  univerAPI.value = result.univerAPI;
+  const lc = api.addEvent(api.Event.LifeCycleChanged, (p: { stage: any }) => {
+    if (p.stage === api.Enum.LifecycleStages.Rendered) showFallback.value = false
+  })
 
-  const lifecycleDisposable = univerAPI.value.addEvent(
-    univerAPI.value.Event.LifeCycleChanged,
-    (params: { stage: any }) => {
-      switch (params.stage) {
-        case univerAPI.value.Enum.LifecycleStages.Ready:
-          break;
-        case univerAPI.value.Enum.LifecycleStages.Rendered:
-          showFallback.value = false;
-          break;
-        case univerAPI.value.Enum.LifecycleStages.Steady:
-          break;
-      }
-    }
-  );
+  const sheets: Record<string, any> = {}
+  let i = 0
+  for (const [periodName, items] of Object.entries(records || {})) {
+    const id = `sheet-${++i}`
+    const data = Array.isArray(items) ? items : ([] as TransportAccounting[])
+    const rows = Math.max(1, data.length + 1)
+    const rowsToAdd = 1000 // запас пустых строк
 
-  const sheets: Record<string, any> = {};
-  const entries = Object.entries(props.records || {});
-  let i = 0;
+    const headerRow: Record<number, { v: any; s?: string }> = {}
+    HEADERS.forEach((h, col) => { headerRow[col] = { v: h, s: 'hdr' } })
 
-  for (const [periodName, items] of entries) {
-    const id = `sheet-${++i}`;
-    const data = Array.isArray(items) ? items : ([] as TransportAccounting[]);
-    const rows = Math.max(1, data.length + 1);
-    const rowsToAdd = 1000;
-
-    // sheet header
-    const headerRow: Record<number, { v: any; s?: string }> = {};
-    HEADERS.forEach((h, col) => {
-      headerRow[col] = { v: h, s: "hdr" };
-    });
-
-    // sheet data
-    const cellData: Record<number, Record<number, { v: any }>> = {
-      0: headerRow,
-    };
-
-    for (let r = 0; r < data.length; r++) {
-      cellData[r + 1] = buildRowCells(data[r]!);
-    }
-
+    const cellData: Record<number, Record<number, { v: any }>> = { 0: headerRow }
+    for (let r = 0; r < data.length; r++) cellData[r + 1] = buildRowCells(data[r]!)
     for (let r = data.length + 1; r < data.length + 1 + rowsToAdd; r++) {
-      const emptyRow: Record<number, { v: any }> = {};
-      for (let c = 0; c < COLUMN_COUNT; c++) {
-        emptyRow[c] = { v: "" };
-      }
-      cellData[r] = emptyRow;
+      const empty: Record<number, { v: any }> = {}
+      for (let c = 0; c < COLUMN_COUNT; c++) empty[c] = { v: '' }
+      cellData[r] = empty
     }
 
-    const { columnData, rowData } = autoFitColumnAndRowData(
-      cellData,
-      COLUMN_COUNT
-    );
+    const { columnData, rowData } = autoFitColumnAndRowData(cellData, COLUMN_COUNT)
 
     sheets[id] = {
       id,
       name: periodName,
-      tabColor: "#009999",
+      tabColor: '#009999',
       hidden: 0,
+      rowCount: data.length + 1 + rowsToAdd, // чтобы конфиг хранил общее число строк
       columnCount: COLUMN_COUNT,
       zoomRatio: 1,
       freeze: { startRow: 1, startColumn: 0, ySplit: 1, xSplit: 0 },
-      scrollTop: 0,
-      scrollLeft: 0,
       defaultColumnWidth: 120,
       defaultRowHeight: 28,
       columnData,
@@ -292,99 +247,77 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       showGridlines: 1,
       rowHeader: { width: 50, hidden: 0 },
       columnHeader: { height: 20, hidden: 0 },
-      rightToLeft: 0,
-    };
+      rightToLeft: 0
+    }
   }
 
-  const sheetOrder = Object.keys(sheets);
-
-  const workbook = {
-    id: "workbook-1",
-    sheetOrder,
-    name: "SLT - Транпортный учет",
+  const order = Object.keys(sheets)
+  univerAPI.value.createWorkbook({
+    id: 'workbook-1',
+    sheetOrder: order,
+    name: 'SLT - Транпортный учет',
     styles: STYLES,
     sheets,
-    resources: [{ name: "SHEET_DEFINED_NAME_PLUGIN", data: "" }],
-  };
+    resources: []
+  })
 
-  univerAPI.value.createWorkbook(workbook);
-
-  const api = univerAPI.value;
-
+  // Подписка на изменения (кросс-совместимая)
   const onExecuted = (cmd: any) => {
     try {
-      const id = String(cmd?.id || "");
-
+      const id = String(cmd?.id || '')
       const isWrite =
-        id.includes("set-range-values") ||
-        id.includes("paste") ||
-        id.includes("clear-cell") ||
-        id.includes("input") ||
-        id.includes("edit");
+        id.includes('set-range-values') ||
+        id.includes('paste') ||
+        id.includes('clear-cell') ||
+        id.includes('input') ||
+        id.includes('edit')
+      if (!isWrite) return
 
-      if (!isWrite) return;
-
-      const workbook = api.getActiveWorkbook?.();
+      const wb = api.getActiveWorkbook?.()
       const sheet =
-        workbook?.getActiveSheet?.() ||
-        (cmd?.params?.sheetId
-          ? workbook?.getSheetBySheetId?.(cmd.params.sheetId)
-          : undefined);
-      if (!sheet) return;
+        wb?.getActiveSheet?.() ||
+        (cmd?.params?.sheetId ? wb?.getSheetBySheetId?.(cmd.params.sheetId) : undefined)
+      if (!sheet) return
 
-      const p = cmd?.params || {};
-      const rng = p.range || (Array.isArray(p.ranges) ? p.ranges[0] : {}) || {};
-
-      let r0 = rng.startRow ?? p.row ?? p.startRow ?? 0;
-      let r1 = rng.endRow ?? p.row ?? p.endRow ?? r0;
-
-      for (let row0 = r0; row0 <= r1; row0++) {
-        if (row0 === 0) continue;
-        scheduleSave(sheet, row0);
-      }
-    } catch {
-      //
-    }
-  };
-
-  if (typeof api.onCommandExecuted === "function") {
-    disposeCmd = api.onCommandExecuted(onExecuted);
-  } else if (api.Event?.CommandExecuted && typeof api.addEvent === "function") {
-    disposeCmd = api.addEvent(api.Event.CommandExecuted, onExecuted);
+      const p = cmd?.params || {}
+      const rng = p.range || (Array.isArray(p.ranges) ? p.ranges[0] : {}) || {}
+      let r0 = (rng.startRow ?? p.row ?? p.startRow ?? 0)
+      let r1 = (rng.endRow ?? p.row ?? p.endRow ?? r0)
+      for (let row0 = r0; row0 <= r1; row0++) { if (row0 !== 0) scheduleSave(sheet, row0) } // пропустить заголовок
+    } catch {}
   }
+  if (typeof api.onCommandExecuted === 'function') disposeCmd = api.onCommandExecuted(onExecuted)
+  else if (api.Event?.CommandExecuted && typeof api.addEvent === 'function') disposeCmd = api.addEvent(api.Event.CommandExecuted, onExecuted)
 
-  const sheetIds = Object.keys(sheets);
-  await lockHeaders(univerAPI.value, sheetIds, COLUMN_COUNT, 1);
-  await lockColumn(univerAPI.value, sheetIds, [5, 26, 27, 28], { headerRow: 1 });
+  // Защита + per-cell правила
+  await lockHeaders(univerAPI.value, order, COLUMN_COUNT, 1)
+  await lockColumn(univerAPI.value, order, [5, 26, 27], { headerRow: 1 })
 
   const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
   const me: any = await $fetch('/api/auth/me', { headers })
+  currentRoleCode = me?.value?.roleCode || me?.roleCode || ''
+  await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode)
 
-  await applyEditableRules(univerAPI.value, me.value?.roleCode || '')
-  return lifecycleDisposable;
-};
+  return lc
+}
 
-watch(
-  () => props.records,
-  async (newRecords) => {
-    if (Object.keys(newRecords).length > 0) {
-      showFallback.value = true;
-      await initializeUniver(newRecords);
-    }
-  },
-  { deep: false, immediate: true }
-);
+// Запуск/очистка
+watch(() => props.records, async (n) => {
+  if (Object.keys(n || {}).length > 0) {
+    showFallback.value = true
+    await initializeUniver(n as Record<string, any[]>)
+  }
+}, { deep: false, immediate: true })
 
 onMounted(async () => {
-  if (Object.keys(props.records).length > 0) {
-    await initializeUniver(props.records);
+  if (Object.keys(props.records || {}).length > 0) {
+    await initializeUniver(props.records)
   }
-});
+})
 
 onUnmounted(() => {
-  if (dispose.value) dispose.value();
-  if (disposeCmd?.dispose) disposeCmd.dispose();
-  timers.forEach((t) => clearTimeout(t));
-  timers.clear();
-});
+  if (disposeCmd?.dispose) disposeCmd.dispose()
+  timers.forEach((t) => clearTimeout(t))
+  timers.clear()
+})
 </script>

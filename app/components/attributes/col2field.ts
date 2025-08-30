@@ -1,6 +1,6 @@
 import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
 
-export const COL2FIELD: Record<number, keyof TransportAccountingSR> = {
+export const COL2FIELD: Record<number, string> = {
     0: 'dateOfPickup',
   1: 'numberOfContainer',
   2: 'cargo',
