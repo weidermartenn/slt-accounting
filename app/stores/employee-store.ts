@@ -13,9 +13,8 @@ export const useEmployeeStore = defineStore('employee', {
             this.loading = true
             this.error = ''
             try {
-                const data = await $fetch<Employee[]>('/api/employee/namelist', {
-                    headers: process ? useRequestHeaders(['cookie']) : undefined
-                })
+                const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+                const data = await $fetch<Employee[]>('/api/employee/namelist', { headers })
                 this.employees = data
             } catch (e: any) {
                 this.error = e?.data?.statusMessage || e?.message || 'Ошибка загрузки'

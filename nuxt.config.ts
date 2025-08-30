@@ -4,6 +4,21 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/main.css'],
+  nitro: {
+    sourceMap: false
+  },
+  vite: {
+    build: {
+      sourcemap: false, cssMinify: true,
+      chunkSizeWarningLimit: 2000
+    },
+    css: {
+      devSourcemap: false
+    },
+    define: {
+      'process.env': JSON.stringify({})
+    }
+  },
   ui: {
     colorMode: true
   },

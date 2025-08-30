@@ -18,9 +18,8 @@ export const useSheetStore = defineStore('sheet', {
             this.loading = true
             this.error = ''
             try {
-                const data = await $fetch<TransportAccounting[]>('/api/worktable/user-worktable-records', {
-                    headers: process ? useRequestHeaders(['cookie']) : undefined
-                })
+                const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+                const data = await $fetch<TransportAccounting[]>('/api/worktable/user-worktable-records', { headers })
                 // @ts-ignore
                 const obj = data?.object ?? data?.body?.object ?? {}
                 this.records = { ...obj }
@@ -35,9 +34,8 @@ export const useSheetStore = defineStore('sheet', {
             this.loading = true
             this.error = ''
             try {
-                const data = await $fetch<TransportAccounting[]>('/api/worktable/admin-worktable-records', {
-                    headers: process ? useRequestHeaders(['cookie']) : undefined
-                })
+                const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+                const data = await $fetch<TransportAccounting[]>('/api/worktable/admin-worktable-records', { headers })
                 // @ts-ignore
                 const obj = data?.object ?? data?.body?.object ?? {}
                 this.records = { ...obj }
