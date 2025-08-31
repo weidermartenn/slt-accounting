@@ -2,39 +2,41 @@ import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRe
 import type { H3Event } from "h3";
 
 export default defineEventHandler(async (event: H3Event) => {
-    const {
-        public: { sltApiBase },
-    } = useRuntimeConfig();
+  const {
+    public: { sltApiBase },
+  } = useRuntimeConfig();
 
-    if (!sltApiBase) {
-        throw createError({
-            statusCode: 500,
-            statusMessage: "sltApiBase не указан",
-        });
-    }
+  if (!sltApiBase) {
+    throw createError({
+      statusCode: 500,
+      statusMessage: "sltApiBase не указан",
+    });
+  }
 
-    const data = await readBody<TransportAccountingSR>(event);
+  const raw = await readBody<any>(event);
 
-    if (!data) {
-        throw createError({
-            statusCode: 400,
-            statusMessage: "Нет данных",
-        });
-    }
+  let items: any[] = [];
+  if (Array.isArray(raw)) items = raw;
+  else if (Array.isArray(raw?.transportAccountingSaveRequestDtos))
+    items = raw.transportAccountingSaveRequestDtos;
+  else if (Array.isArray(raw?.transportAccountingSR)) items = raw.transportAccountingSR;
+  else if (raw?.data) items = [raw.data];
+  else if (raw) items = [raw];
 
-    let items: any[] = [];
-    items = [data];
+  if (!items.length) {
+    throw createError({ statusCode: 400, statusMessage: "Данные не указаны" });
+  }
 
-    const S = (v: unknown) =>
-        v == null ? "" : String(v).replace(/\r?\n/g, "").trim();
+  const S = (v: unknown) =>
+    v == null ? "" : String(v).replace(/\r?\n/g, "").trim();
 
-    const D = (v: unknown) => {
-        const s = S(v);
-        const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
-        return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
-    };
+  const D = (v: unknown) => {
+    const s = S(v)
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s)
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : s
+  }
 
-    const dtos = items.map((d: TransportAccountingSR) => ({
+  const dtos = items.map((d: TransportAccountingSR) => ({
     additionalExpenses: S(d.additionalExpenses),
     addressOfDelivery: S(d.addressOfDelivery),
     cargo: S(d.cargo),
@@ -70,7 +72,7 @@ export default defineEventHandler(async (event: H3Event) => {
       headers: { Authorization: `Bearer ${getCookie(event, "access_token")}` },
       body,
     })
-  }
+    }
 
   try {
     return await send(dtos)
@@ -81,5 +83,4 @@ export default defineEventHandler(async (event: H3Event) => {
       data: e?.data,
     });
   }
-
-})
+});

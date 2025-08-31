@@ -1,10 +1,6 @@
 import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
 import type { H3Event } from "h3";
 
-/**
- * Универсальный приеемник для добавления строк в ТУ
- * Принимает любой формат и отправляет в бек голый массив
- */
 export default defineEventHandler(async (event: H3Event) => {
   const {
     public: { sltApiBase },
