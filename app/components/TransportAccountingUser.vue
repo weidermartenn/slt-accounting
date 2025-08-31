@@ -368,17 +368,7 @@ async function onDeleteClick() {
         body: ids
       })
     }
-    // Очищаем данные в выделенных строках
-    for (const row of deleteState.rows) {
-      const row1 = row + 1
-      // A..D
-      sheet.getRange?.(`A${row1}:D${row1}`)?.setValues?.([['', '', '', '']])
-      // F..Y
-      const fy = Array.from({ length: 20 }, () => '')
-      sheet.getRange?.(`F${row1}:Y${row1}`)?.setValues?.([fy])
-      // AB (ID)
-      sheet.getRange?.(`${colLetter(COLUMN_COUNT)}${row1}`)?.setValues?.([[0]])
-    }
+    
     const uSheet = api
       .getActiveWorkbook()
       .getSheetBySheetId?.(sheet.getSheetId())
