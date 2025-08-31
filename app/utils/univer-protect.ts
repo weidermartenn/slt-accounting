@@ -89,56 +89,62 @@ export async function lockColumn(
  * если 4, 10, 11, 17, 19 заполнены - строка блокируется, кроме 24
  */
 export function applyCellLocks(row: any, role: RoleCode) {
-  if (!row || typeof row !== 'object') return row;
-  row.cells ||= {};
-  const ensureCell = (ci: number) => (row.cells[ci] = row.cells[ci] || {});
+  if (!row || typeof row !== 'object') return row
+  row.cells ||= {}
+  const ensureCell = (ci: number) => (row.cells[ci] = row.cells[ci] || {})
 
-  ensureCell(25).editable = false;
-  ensureCell(26).editable = false;
+  // backend-only
+  ensureCell(25).editable = false
+  ensureCell(26).editable = false
 
+  // привилегированные роли: всё остальное доступно — и сразу выходим
   if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH') {
     for (let ci = 0; ci < 28; ci++) {
-      if (ci !== 25 && ci !== 26) {
-        ensureCell(ci).editable = true;
-      }
+      if (ci !== 25 && ci !== 26) ensureCell(ci).editable = true
+      // и стили не ставим, чтобы ничего не подсвечивалось для админа
+      if (row.cells[ci]?.s) delete row.cells[ci].s
     }
+    return row                    // ← обязательно, иначе ниже снова заблокируешь
   }
 
   const hasValue = (ci: number) => {
-    const c = row.cells[ci];
-    const raw = c?.v ?? c?.text;
-    if (raw == null) return false;
-    const s = String(raw).trim().toLowerCase();
-    return !(s === '' || s === 'null' || s === 'undefined' || s === 'nan' || s === 'false');
-  };
-
-  // Условное форматирование для ячеек
-  if (hasValue(10) && hasValue(11)) {
-    ensureCell(9).s = 'conditionallyFilled';
-  }
-  if (hasValue(19)) {
-    ensureCell(16).s = 'conditionallyFilled';
-  }
-  if (hasValue(24)) {
-    ensureCell(24).s = 'conditionallyFilled';
+    const c = row.cells[ci]
+    const raw = c?.v ?? c?.text
+    if (raw == null) return false
+    const s = String(raw).trim().toLowerCase()
+    return !(s === '' || s === 'null' || s === 'undefined' || s === 'nan' || s === 'false')
   }
 
-  ensureCell(9).editable = !(hasValue(10) && hasValue(11));
-  ensureCell(16).editable = !hasValue(19);
-  ensureCell(24).editable = !hasValue(24);
-  ensureCell(4).editable = false;
+  // перед установкой условных стилей — очистим прежние, чтобы они «снимались»
+  ;[9, 16, 24].forEach(ci => { if (row.cells[ci]?.s) delete row.cells[ci].s })
 
+  // условная подсветка (9 от 10+11, 16 от 19, 24 от 24)
+  if (hasValue(10) && hasValue(11)) 
+    ensureCell(9).s  = 'conditionallyFilled'
+  if (hasValue(19))                
+    ensureCell(16).s = 'conditionallyFilled'
+  if (hasValue(24))                
+    ensureCell(24).s = 'conditionallyFilled'
+
+  // editable правила
+  ensureCell(9).editable  = !(hasValue(10) && hasValue(11))
+  ensureCell(16).editable = !hasValue(19)
+  ensureCell(24).editable = !hasValue(24)
+  ensureCell(4).editable  = false
+
+  // когда 4,10,11,17,19 заполнены — замораживаем строку (кроме 24)
   if ([4, 10, 11, 17, 19].every(hasValue)) {
     for (let ci = 0; ci <= 26; ci++) {
-      if (ci === 24) continue;
-      ensureCell(ci).editable = false;
-      ensureCell(ci).s = 'lockedRow'; // Применяем стиль для заблокированных строк
+      if (ci === 24) continue
+      ensureCell(ci).editable = false
+      ensureCell(ci).s        = 'lockedRow'
     }
-    ensureCell(24).editable = !hasValue(24);
+    ensureCell(24).editable = !hasValue(24)
   }
 
-  return row;
+  return row
 }
+
 
 // применить правила к строкам
 export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
@@ -153,17 +159,19 @@ export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
 
 // применить правила для всех листов активной книги
 export async function applyEditableRules(univerAPI: any, role: RoleCode) {
-  const workbook = univerAPI.getActiveWorkbook?.();
-  if (!workbook) return 
+  const workbook = univerAPI.getActiveWorkbook?.()
+  if (!workbook) return
 
   const sheets = workbook.getSheets?.() ?? []
   for (const s of sheets) {
     const snap = s.getSnapshot?.() ?? s.getModel?.() ?? s
     if (snap?.data?.rows?._) {
       applyLocksForSheet(snap, role)
-      if (typeof s.setSnapshot === 'function') s.setSnapshot(snap)
-      else if (typeof workbook.applySnapshot === 'function' && typeof workbook.getSnapShot === 'function') {
-        const wSnap = workbook.getSnapshot()
+
+      if (typeof s.setSnapshot === 'function') {
+        s.setSnapshot(snap)
+      } else if (typeof workbook.applySnapshot === 'function' && typeof workbook.getSnapshot === 'function') {
+        const wSnap = workbook.getSnapshot() 
         workbook.applySnapshot(wSnap)
       }
     }

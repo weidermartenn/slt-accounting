@@ -38,7 +38,7 @@
                         </div>
                     </div>
                     <div class="grid grid-cols-1 gap-4">
-                        <UButton :ui="{ base: 'justify-center h-12 text-md'}" color="error" variant="soft">Выйти из аккаунта</UButton>
+                        <UButton @click="logout" :ui="{ base: 'justify-center h-12 text-md'}" color="error" variant="soft">Выйти из аккаунта</UButton>
                     </div>
                 </div>
             </template>
@@ -82,4 +82,8 @@ const isAdmin = computed(() => me.value?.roleCode === 'ROLE_ADMIN')
 const visibleItems = computed(() => 
     items.filter(i => i.role !== 'admin' || isAdmin.value)
 )
+
+const logout = async () => {
+    await $fetch('/api/auth/logout', { method: 'POST' })
+}
 </script>

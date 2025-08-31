@@ -40,10 +40,10 @@ export const STYLES: Record<string, IStyleData> = {
       l: 4,
     },
     bd: {
-      l: { s: 1, cl: { rgb: "#cccccc" } },
-      t: { s: 1, cl: { rgb: "#cccccc" } },
-      b: { s: 1, cl: { rgb: "#cccccc" } },
-      r: { s: 1, cl: { rgb: "#cccccc" } },
+      l: { s: 1, cl: { rgb: "#000000" } },
+      t: { s: 1, cl: { rgb: "#000000" } },
+      b: { s: 1, cl: { rgb: "#000000" } },
+      r: { s: 1, cl: { rgb: "#000000" } },
     }
   },
   conditionallyFilled: {
