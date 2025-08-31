@@ -14,13 +14,24 @@
     <!-- Индикатор сохранения -->
     <div
       v-if="showSaving"
-      class="absolute right-5 -top-14 z-50 flex items-center bg-blue-600 text-white rounded-full px-4 py-2 shadow"
+      class="absolute right-25 -top-14 z-50 flex items-center bg-blue-600 text-white rounded-full px-4 py-2 shadow"
     >
       <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
       <span class="ml-2">Сохраняем…</span>
     </div>
 
-    <button @click="getName" class="cursor-pointer">get name</button>
+    <button @click="getName()">jsdh</button>
+    <!-- Кнопка удаления строки -->
+    <div class="absolute right-5 -top-12 z-50">
+      <UButton
+        :color="deleteState.pending ? 'error' : 'secondary'"
+        :variant="deleteState.pending ? 'solid' : 'soft'"
+        icon="i-lucide-trash-2"
+        @click="onDeleteClick"
+      >
+        {{ deleteState.pending ? 'Подтвердите удаление' : 'Удалить строку' }}
+      </UButton>
+    </div>
 
     <!-- Контейнер Univer -->
     <div id="univer" :class="{ 'opacity-0': showFallback }" style="width: 100%; height: 100%" />
@@ -28,7 +39,7 @@
 </template>
 
 <script setup lang="ts">
-import { convertPositionCellToSheetOverGrid, UniverSheetsCorePreset } from '@univerjs/preset-sheets-core'
+import { convertPositionCellToSheetOverGrid, DeleteWorksheetRangeThemeStyleMutation, UniverSheetsCorePreset } from '@univerjs/preset-sheets-core'
 import UniverPresetSheetsCoreRuRU from '@univerjs/preset-sheets-core/locales/ru-RU'
 import UniverPresetSheetsCoreEnUS from '@univerjs/preset-sheets-core/locales/en-US'
 import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets'
@@ -53,10 +64,18 @@ const SAVING_MIN_VISIBLE_MS = 800
 
 const showFallback = ref(true)
 const showSaving = ref(false)
+const activeRow0 = ref(1)
+let disposeSelSubs: any[] = []
 const univerAPI = ref<any>(null)
 let disposeCmd: any
 let currentRoleCode = ''
 const timers = new Map<string, number>()
+
+const deleteState = reactive<{ pending: boolean; row0: number; timeout?: number | null}>({
+  pending: false,
+  row0: -1,
+  timeout: null
+})
 
 /* ===== helpers ===== */
 function waitContainerReady(id = 'univer') {
@@ -112,9 +131,44 @@ const getName = () => {
   const wb = univerAPI.value.getActiveWorkbook()
   const sheet = wb.getActiveSheet()
   const snap = sheet.getSheet().getSnapshot()
+
+  console.log(snap)
   
   if (snap.name) return snap.name
   return 'Транспортный учет'
+}
+
+function _updActiveRow(payload: any) {
+  const r = 
+    payload?.primary?.range?.startRow ??
+    payload?.range?.startRow ??
+    payload?.startRow
+    payload?.row 
+  if (typeof r === 'number' && r >=0 ) activeRow0.value = r
+}
+
+function bindSelectionWatcher(api: any) {
+  try {
+    const svc =
+      api?._selectionManagerService ||
+      api?._injector?.get?.('SelectionManagerService') ||
+      api?._injector?.get?.(api.SelectionManagerService) // на всякий случай
+
+    const subs: any[] = []
+    const trySub = (obs: any) => {
+      if (obs && typeof obs.subscribe === 'function') {
+        subs.push(obs.subscribe((p: any) => _updActiveRow(p)))
+      }
+    }
+
+    // разные названия потоков в версиях:
+    trySub(svc?.selectionMoveStart$)
+    trySub(svc?.selectionMoving$)
+    trySub(svc?.selectionMoved$)
+    trySub(svc?.selectionChanged$)
+
+    disposeSelSubs = subs
+  } catch {/* no-op */}
 }
 
 function readRowValues(sheet: any, row0: number): any[] {
@@ -179,7 +233,6 @@ function scheduleSave(sheet: any, row0: number) {
       const dto = toDto(values, listName)
 
       const empty = Object.entries(dto).every(([k, v]) => (k === 'id' ? v === 0 : v === '' || k === 'listName'))
-      if (empty) return
 
       if (dto.id > 0) {
         await $fetch('/api/worktable/record-update', {
@@ -205,6 +258,149 @@ function scheduleSave(sheet: any, row0: number) {
   }, SAVE_DEBOUNCE_MS)
 
   timers.set(key, t)
+}
+/* ===== удаление строки ===== */
+function selectWholeRow(sheet: any, row0: number) {
+  const row1 = row0 + 1
+  const a1 = `A${row1}:${colLetter(COLUMN_COUNT)}${row1}`
+  const range = sheet.getRange?.(a1)
+  if (range?.select) { try { range.select() } catch {} ; return }
+  if (sheet.setSelection) { try { sheet.setSelection(row0, 0, 1, COLUMN_COUNT) } catch {} }
+}
+
+function getActiveRow0(api: any): number {
+  try {
+    const wb = api?.getActiveWorkbook?.()
+    const sh = wb?.getActiveSheet?.()
+    if (!sh) return 1
+
+    // 1) Новый selection manager (часто лежит на api)
+    const svc =
+      api?._selectionManagerService ||
+      api?._injector?.get?.('SelectionManagerService') ||
+      api?._injector?.get?.(api.SelectionManagerService)
+
+    // попробуем вытащить текущий selection из сервиса
+    const cur =
+      svc?.currentSelection ||
+      svc?._currentSelection ||
+      svc?.selection ||
+      null
+
+    const fromSvc =
+      cur?.primary?.range?.startRow ??
+      cur?.range?.startRow ??
+      cur?.startRow ??
+      cur?.row
+
+    if (typeof fromSvc === 'number' && fromSvc >= 0) return fromSvc
+
+    // 2) API листа: массив selections
+    if (typeof sh.getSelections === 'function') {
+      const sels = sh.getSelections() || []
+      const sel = sels[0]
+      const fromList =
+        sel?.range?.startRow ??
+        sel?.startRow ??
+        sel?.row
+      if (typeof fromList === 'number' && fromList >= 0) return fromList
+    }
+
+    // 3) Старый API листа: одиночный selection
+    if (typeof sh.getSelection === 'function') {
+      const sel = sh.getSelection()
+      const fromSingle =
+        sel?.range?.startRow ??
+        sel?.startRow ??
+        sel?.row
+      if (typeof fromSingle === 'number' && fromSingle >= 0) return fromSingle
+    }
+  } catch {}
+
+  // fallback: первая строка данных (после заголовка)
+  return 1
+}
+
+async function onDeleteClick() {
+  console.debug('[delete] active row0 =', getActiveRow0(univerAPI.value))
+
+  const api = univerAPI.value 
+  const workbook = api?.getActiveWorkbook?.()
+  if (!workbook) return
+
+  const sheet = workbook?.getActiveSheet?.()
+  if (!sheet) return
+
+  if (!deleteState.pending) {
+    const r0 = Math.max(1, getActiveRow0(api))
+    deleteState.pending = true
+    deleteState.row0 = r0
+    selectWholeRow(sheet, r0)
+
+    if (deleteState.timeout) {
+      clearTimeout(deleteState.timeout)
+    }
+    deleteState.timeout = window.setTimeout(() => {
+      deleteState.pending = false
+      deleteState.row0 = -1 
+      deleteState.timeout = null
+    }, 8000)
+    return
+  }
+
+  // подтверждение
+  const row0 = deleteState.row0 
+  if (row0 < 1) {
+    deleteState.pending = false 
+    deleteState.row0 = 1 
+    return
+  }
+
+  try {
+    const id = getIdFromCell(sheet, row0) 
+    if (id > 0) {
+      await $fetch('/api/worktable/record-delete', {
+        method: 'DELETE',
+        body: [id]
+      })
+    }
+
+    const row1 = row0 + 1 
+    // A..D
+    sheet.getRange?.(`A${row1}:D${row1}`)?.setValues?.([[ '', '', '', '' ]])
+    // F..Y 
+    const fy = Array.from({ length: 20 }, () => '')
+    sheet.getRange?.(`F${row1}:Y${row1}`)?.setValues?.([fy])
+    // AB (ID)
+    sheet.getRange?.(`${colLetter(COLUMN_COUNT)}${row1}`)?.setValues?.([[ 0 ]])
+
+    toast.add({
+      title: 'Запись удалена',
+      color: 'success',
+      icon: 'i-lucide-check'
+    })
+  } catch (e: any) {
+    toast.add({
+      title: 'Не удалось удалить запись',
+      color: 'error'
+    })
+    console.error(e)
+  } finally {
+    if (deleteState.timeout) {
+      clearTimeout(deleteState.timeout)
+    }
+    deleteState.pending = false 
+    deleteState.row0 = -1 
+    deleteState.timeout = null
+  }
+}
+
+function onKeydown (e: KeyboardEvent) {
+  if (e.key !== 'Delete') return 
+  const t = e.target as HTMLElement | null 
+  const tag = t?.tagName?.toLowerCase?.()
+  if (tag === 'input' || tag === 'textarea' || (t as any)?.isContentEditable) return 
+  if (!deleteState.pending) onDeleteClick()
 }
 
 /* ===== инициализация Univer ===== */
@@ -314,6 +510,8 @@ const initializeUniver = async (records: Record<string, any[]>) => {
   currentRoleCode = me?.value?.roleCode || me?.roleCode || ''
   await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode)
 
+  bindSelectionWatcher(univerAPI.value)
+  window.addEventListener('keydown', onKeydown)
   return lc
 }
 
@@ -335,5 +533,12 @@ onUnmounted(() => {
   if (disposeCmd?.dispose) disposeCmd.dispose()
   timers.forEach((t) => clearTimeout(t))
   timers.clear()
+  window.removeEventListener('keydown', onKeydown)
+  disposeSelSubs.forEach(s => { 
+    try {
+      s?.unsubscribe?.()
+    } catch {}
+  })
+  disposeSelSubs = []
 })
 </script>
