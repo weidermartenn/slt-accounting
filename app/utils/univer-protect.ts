@@ -89,38 +89,55 @@ export async function lockColumn(
  * если 4, 10, 11, 17, 19 заполнены - строка блокируется, кроме 24
  */
 export function applyCellLocks(row: any, role: RoleCode) {
-  if (!row || typeof row !== 'object') return row
+  if (!row || typeof row !== 'object') return row;
+  row.cells ||= {};
+  const ensureCell = (ci: number) => (row.cells[ci] = row.cells[ci] || {});
 
-  row.cells ||= {}
-  const ensureCell = (ci: number) => (row.cells[ci] = row.cells[ci] || {})
+  ensureCell(25).editable = false;
+  ensureCell(26).editable = false;
 
-  ensureCell(25).editable = false
-  ensureCell(26).editable = false
-
-  if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH') return row
-
-  const hasValue = (ci: number) => {
-    const c = row.cells[ci]
-    const raw = c?.v ?? c?.text
-    if (raw == null) return false
-    const s = String(raw).trim().toLowerCase()
-    return !(s === '' || s === 'null' || s === 'undefined' || s === 'nan' || s === 'false')
+  if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH') {
+    for (let ci = 0; ci < 28; ci++) {
+      if (ci !== 25 && ci !== 26) {
+        ensureCell(ci).editable = true;
+      }
+    }
   }
 
-  ensureCell(9).editable = !(hasValue(10) && hasValue(11))
-  ensureCell(16).editable = !hasValue(19)
-  ensureCell(24).editable = !hasValue(24)
-  ensureCell(4).editable = false
+  const hasValue = (ci: number) => {
+    const c = row.cells[ci];
+    const raw = c?.v ?? c?.text;
+    if (raw == null) return false;
+    const s = String(raw).trim().toLowerCase();
+    return !(s === '' || s === 'null' || s === 'undefined' || s === 'nan' || s === 'false');
+  };
+
+  // Условное форматирование для ячеек
+  if (hasValue(10) && hasValue(11)) {
+    ensureCell(9).s = 'conditionallyFilled';
+  }
+  if (hasValue(19)) {
+    ensureCell(16).s = 'conditionallyFilled';
+  }
+  if (hasValue(24)) {
+    ensureCell(24).s = 'conditionallyFilled';
+  }
+
+  ensureCell(9).editable = !(hasValue(10) && hasValue(11));
+  ensureCell(16).editable = !hasValue(19);
+  ensureCell(24).editable = !hasValue(24);
+  ensureCell(4).editable = false;
 
   if ([4, 10, 11, 17, 19].every(hasValue)) {
     for (let ci = 0; ci <= 26; ci++) {
-      if (ci === 24) continue 
-      ensureCell(ci).editable = false 
+      if (ci === 24) continue;
+      ensureCell(ci).editable = false;
+      ensureCell(ci).s = 'lockedRow'; // Применяем стиль для заблокированных строк
     }
-    ensureCell(24).editable = !hasValue(24)
+    ensureCell(24).editable = !hasValue(24);
   }
 
-  return row
+  return row;
 }
 
 // применить правила к строкам

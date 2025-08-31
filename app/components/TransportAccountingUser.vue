@@ -1,28 +1,29 @@
 <template>
   <div class="relative" style="width: 100%; height: 90vh">
     <!-- Оверлей-лоадер -->
-    <div
-      v-if="showFallback"
-      class="absolute inset-0 flex items-center justify-center bg-white/90 z-10"
-    >
+    <div v-if="showFallback" class="absolute inset-0 flex items-center justify-center bg-white/90 z-10">
       <div class="text-center">
         <UIcon name="i-lucide-loader-pinwheel" class="w-10 h-10 animate-spin" />
         <p class="mt-2 text-lg font-medium">Загрузка данных таблицы</p>
       </div>
     </div>
-
     <!-- Индикатор сохранения -->
-    <div
-      v-if="showSaving"
-      class="absolute right-25 -top-14 z-50 flex items-center bg-blue-600 text-white rounded-full px-4 py-2 shadow"
-    >
+    <div v-if="showSaving" class="absolute right-25 -top-14 z-50 flex items-center bg-blue-600 text-white rounded-full px-4 py-2 shadow">
       <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
       <span class="ml-2">Сохраняем…</span>
     </div>
-
-    <button @click="getName()">jsdh</button>
-    <!-- Кнопка удаления строки -->
-    <div class="absolute right-5 -top-12 z-50">
+    <!-- Кнопки управления -->
+    <div class="absolute right-5 -top-12 z-50 flex gap-2">
+      
+      <UButton
+        :disabled="!hasChanges"
+        @click="saveChanges"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-save"
+      >
+        Сохранить запись
+      </UButton>
       <UButton
         :color="deleteState.pending ? 'error' : 'secondary'"
         :variant="deleteState.pending ? 'solid' : 'soft'"
@@ -32,14 +33,14 @@
         {{ deleteState.pending ? 'Подтвердите удаление' : 'Удалить строку' }}
       </UButton>
     </div>
-
+    <button @click="">sadfds</button>
     <!-- Контейнер Univer -->
     <div id="univer" :class="{ 'opacity-0': showFallback }" style="width: 100%; height: 100%" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { convertPositionCellToSheetOverGrid, DeleteWorksheetRangeThemeStyleMutation, UniverSheetsCorePreset } from '@univerjs/preset-sheets-core'
+import { UniverSheetsCorePreset } from '@univerjs/preset-sheets-core'
 import UniverPresetSheetsCoreRuRU from '@univerjs/preset-sheets-core/locales/ru-RU'
 import UniverPresetSheetsCoreEnUS from '@univerjs/preset-sheets-core/locales/en-US'
 import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets'
@@ -52,28 +53,29 @@ import type { TransportAccounting } from '~/entities/TransportAccountingDto/type
 import { autoFitColumnAndRowData } from '~/utils/autoFit'
 import { lockHeaders, lockColumn, colLetter, applyEditableRules } from '~/utils/univer-protect'
 import { COL2FIELD } from './attributes/col2field'
+import type { TransportAccountingSR } from '~/entities/TransportAccountingSaveRequestDto/types'
 
 const props = defineProps<{ records: Record<string, any[]> }>()
 const toast = useToast()
 
 // Константы/состояние
+const hasChanges = ref(false)
 const COLUMN_COUNT = HEADERS.length
-const LOCKED_COLS = [4, 25, 26, 27] // 0-based: 5(E), 26(Z), 27(AA), 28(AB)
-const SAVE_DEBOUNCE_MS = 3000
+const LOCKED_COLS = [4, 25, 26, 27]
+const SAVE_DEBOUNCE_MS_DEFAULT = 100
+const SAVE_DEBOUNCE_MS_MANUAL = 30000
 const SAVING_MIN_VISIBLE_MS = 800
 
 const showFallback = ref(true)
 const showSaving = ref(false)
-const activeRow0 = ref(1)
-let disposeSelSubs: any[] = []
 const univerAPI = ref<any>(null)
 let disposeCmd: any
 let currentRoleCode = ''
 const timers = new Map<string, number>()
 
-const deleteState = reactive<{ pending: boolean; row0: number; timeout?: number | null}>({
+const deleteState = reactive<{ pending: boolean; rows: number[]; timeout?: number | null}>({
   pending: false,
-  row0: -1,
+  rows: [],
   timeout: null
 })
 
@@ -127,89 +129,93 @@ function buildRowCells(rec: TransportAccounting) {
   return row
 }
 
-const getName = () => {
+function getName() {
   const wb = univerAPI.value.getActiveWorkbook()
   const sheet = wb.getActiveSheet()
   const snap = sheet.getSheet().getSnapshot()
-
-  console.log(snap)
   
   if (snap.name) return snap.name
   return 'Транспортный учет'
 }
 
-function _updActiveRow(payload: any) {
-  const r = 
-    payload?.primary?.range?.startRow ??
-    payload?.range?.startRow ??
-    payload?.startRow
-    payload?.row 
-  if (typeof r === 'number' && r >=0 ) activeRow0.value = r
+function getActiveRange() {
+  const wb = univerAPI.value.getActiveWorkbook()
+  const sheet = wb.getActiveSheet()
+  const activeSelection = sheet.getSelection()
+  const activeRange = activeSelection.getActiveRange()
+  return activeRange
 }
 
-function bindSelectionWatcher(api: any) {
-  try {
-    const svc =
-      api?._selectionManagerService ||
-      api?._injector?.get?.('SelectionManagerService') ||
-      api?._injector?.get?.(api.SelectionManagerService) // на всякий случай
-
-    const subs: any[] = []
-    const trySub = (obs: any) => {
-      if (obs && typeof obs.subscribe === 'function') {
-        subs.push(obs.subscribe((p: any) => _updActiveRow(p)))
-      }
-    }
-
-    // разные названия потоков в версиях:
-    trySub(svc?.selectionMoveStart$)
-    trySub(svc?.selectionMoving$)
-    trySub(svc?.selectionMoved$)
-    trySub(svc?.selectionChanged$)
-
-    disposeSelSubs = subs
-  } catch {/* no-op */}
+function getSelectedRows(): number[] {
+  const activeRange = getActiveRange()
+  if (!activeRange) return []
+  const startRow = activeRange._range.startRow
+  const endRow = activeRange._range.endRow
+  // Если выделена строка заголовка (0), игнорируем её
+  if (startRow === 0 && endRow === 0) return []
+  
+  const rows: number[] = []
+  for (let i = startRow; i <= endRow; i++) {
+    // Пропускаем строку заголовка
+    if (i > 0) rows.push(i)
+  }
+  return rows
 }
 
-function readRowValues(sheet: any, row0: number): any[] {
-  const row1 = row0 + 1
-  const last = colLetter(COLUMN_COUNT)
-  const a1 = `A${row1}:${last}${row1}`
-  const vals2d = sheet.getRange?.(a1)?.getValues?.() || []
-  return vals2d[0] || Array.from({ length: COLUMN_COUNT }, () => '')
+function readRowValues(sheet: any, row0: number): string[] {
+  const row1 = row0 + 1;
+  const last = colLetter(COLUMN_COUNT);
+  const a1 = `A${row1}:${last}${row1}`;
+  const vals2d = sheet.getRange?.(a1)?.getValues?.() || [];
+  const result = vals2d[0] || Array.from({ length: COLUMN_COUNT }, () => '');
+  return result;
 }
 
-function toDto(values: any[], listName: string) {
-  const draft: Record<string, any> = { listName }
+function toDto(values: any[], listName: string): TransportAccountingSR {
+  const draft: Partial<TransportAccountingSR> = {
+    listName: listName,
+    id: 0,
+    additionalExpenses: '',
+    addressOfDelivery: '',
+    cargo: '',
+    client: '',
+    clientLead: '',
+    contractor: '',
+    contractorRate: '',
+    dateOfBill: '',
+    dateOfPaymentContractor: '',
+    dateOfPickup: '',
+    dateOfSubmission: '',
+    datePayment: '',
+    departmentHead: '',
+    driver: '',
+    formPayAs: '',
+    formPayHim: '',
+    manager: '',
+    numberOfBill: '',
+    numberOfBillAdd: '',
+    numberOfContainer: '',
+    ourFirm: '',
+    salesManager: '',
+    sumIssued: '',
+    summa: '',
+    typeOfContainer: '',
+    income: '',
+    incomeLearned: '',
+  }
 
   for (let c = 0; c < COLUMN_COUNT; c++) {
     const key = COL2FIELD[c]; 
     if (!key) continue 
-    draft[key] = values[c] ?? (key === 'id' ? 0 : '')
+    draft[key as keyof TransportAccountingSR] = values[c] ?? (key === 'id' ? 0 : '')
   }
 
   for (const k in draft) {
-    const v = draft[k]
-    draft[k] = (v == null ? '' : String(v).replace(/\r?\n/g, '').trim())
-  }
-  draft.id = Number(draft.id) || 0 
-  return draft
-}
-
-function toPayload(values: any[]) {
-  // backend save-модель хочет строки (включая числовые поля), id — число
-  const draft: Record<string, any> = { taxes: '', income: '', incomeLearned: '' }
-  for (let c = 0; c < COLUMN_COUNT; c++) {
-    const key = COL2FIELD[c]; if (!key) continue
-    draft[key] = values[c] ?? (key === 'id' ? 0 : '')
-  }
-  // нормализуем строки и id
-  for (const k in draft) {
-    const v = draft[k]
-    draft[k] = (v == null ? '' : String(v).replace(/\r?\n/g, '').trim())
+    const v = draft[k as keyof TransportAccountingSR]
+    draft[k as keyof TransportAccountingSR] = (v == null ? '' : String(v).replace(/\r?\n/g, '').trim()) as never
   }
   draft.id = Number(draft.id) || 0
-  return draft
+  return draft as TransportAccountingSR
 }
 
 function getIdFromCell(sheet: any, row0: number): number {
@@ -219,10 +225,88 @@ function getIdFromCell(sheet: any, row0: number): number {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-/* ===== автосохранение (дебаунс + индикатор) ===== */
+function getIdsFromRows(sheet: any, rows: number[]): number[] {
+  const ids: number[] = []
+  for (const row of rows) {
+    const id = getIdFromCell(sheet, row)
+    if (id > 0) ids.push(id)
+  }
+  return ids
+}
+
+function isReadyToSave(values: string[]): boolean {
+  const hasValue = (index: number): boolean => {
+    const value = values[index];
+    const isValid = !!value && String(value).trim() !== '';
+    console.log(`Cell ${index} value: "${value}", isValid: ${isValid}`);
+    return isValid;
+  };
+
+  const is10And11Filled = hasValue(10) && hasValue(11);
+  const is19Filled = hasValue(19);
+  const is24Filled = hasValue(24);
+
+  console.log(`is10And11Filled: ${is10And11Filled}, is19Filled: ${is19Filled}, is24Filled: ${is24Filled}`);
+
+  return is10And11Filled && is19Filled && is24Filled;
+}
+
+async function saveChanges() {
+  if (!hasChanges.value) return;
+
+  showSaving.value = true;
+  try {
+    const api = univerAPI.value;
+    const workbook = api?.getActiveWorkbook?.();
+    if (!workbook) return;
+    const sheet = workbook?.getActiveSheet?.();
+    if (!sheet) return;
+
+    const selectedRows = getSelectedRows();
+    if (selectedRows.length === 0) {
+      toast.add({ title: 'Нет выделенных строк для сохранения', color: 'warning' });
+      return;
+    }
+
+    for (const row of selectedRows) {
+      const values = readRowValues(sheet, row);
+      if (!isReadyToSave(values)) {
+        toast.add({ title: 'Не все обязательные поля заполнены', color: 'warning' });
+        continue;
+      }
+
+      const listName = getName();
+      const dto: TransportAccountingSR = toDto(values, listName);
+
+      if (dto.id > 0) {
+        await $fetch('/api/worktable/record-update', {
+          method: 'PATCH',
+          body: dto
+        });
+      } else {
+        await $fetch('/api/worktable/record-add', {
+          method: 'POST',
+          body: [dto]
+        });
+      }
+    }
+
+    toast.add({ title: 'Данные успешно сохранены', color: 'success' });
+    hasChanges.value = false;
+  } catch (e: any) {
+    toast.add({ title: 'Не удалось сохранить данные', description: e?.data?.statusMessage || e?.message, color: 'error' });
+    console.error(e);
+  } finally {
+    showSaving.value = false;
+  }
+}
+
+/* ===== автосохранение ===== */
 function scheduleSave(sheet: any, row0: number) {
   const key = `${sheet.getSheetId?.()}::${row0}`
   if (timers.has(key)) { clearTimeout(timers.get(key)!); timers.delete(key) }
+
+  hasChanges.value = true
 
   const t = window.setTimeout(async () => {
     const started = performance.now()
@@ -230,10 +314,16 @@ function scheduleSave(sheet: any, row0: number) {
     try {
       const values = readRowValues(sheet, row0)
       const listName = getName()
-      const dto = toDto(values, listName)
 
+      if (!isReadyToSave(values)) {
+        showSaving.value = false;
+        return
+      }
+
+      const dto: TransportAccountingSR = toDto(values, listName)
       const empty = Object.entries(dto).every(([k, v]) => (k === 'id' ? v === 0 : v === '' || k === 'listName'))
 
+      console.log("id: ",dto.id)
       if (dto.id > 0) {
         await $fetch('/api/worktable/record-update', {
           method: 'PATCH',
@@ -245,7 +335,8 @@ function scheduleSave(sheet: any, row0: number) {
           body: [dto]
         })
       }
-      console.log('Сохранено', dto)
+      hasChanges.value = false
+
     } catch (e: any) {
       toast.add({ title: 'Не удалось сохранить данные', description: e?.data?.statusMessage || e?.message, color: 'error' })
       console.error(e)
@@ -255,75 +346,35 @@ function scheduleSave(sheet: any, row0: number) {
       if (rest) await new Promise(res => setTimeout(res, rest))
       showSaving.value = false
     }
-  }, SAVE_DEBOUNCE_MS)
+  }, hasChanges.value ? SAVE_DEBOUNCE_MS_DEFAULT : SAVE_DEBOUNCE_MS_MANUAL)
 
   timers.set(key, t)
 }
+
 /* ===== удаление строки ===== */
-function selectWholeRow(sheet: any, row0: number) {
-  const row1 = row0 + 1
-  const a1 = `A${row1}:${colLetter(COLUMN_COUNT)}${row1}`
+function selectRows(sheet: any, rows: number[]) {
+  if (rows.length === 0) return
+  
+  const firstRow = Math.min(...rows)
+  const lastRow = Math.max(...rows)
+  const row1 = firstRow + 1
+  const row2 = lastRow + 1
+  
+  const a1 = `A${row1}:${colLetter(COLUMN_COUNT)}${row2}`
   const range = sheet.getRange?.(a1)
-  if (range?.select) { try { range.select() } catch {} ; return }
-  if (sheet.setSelection) { try { sheet.setSelection(row0, 0, 1, COLUMN_COUNT) } catch {} }
-}
-
-function getActiveRow0(api: any): number {
-  try {
-    const wb = api?.getActiveWorkbook?.()
-    const sh = wb?.getActiveSheet?.()
-    if (!sh) return 1
-
-    // 1) Новый selection manager (часто лежит на api)
-    const svc =
-      api?._selectionManagerService ||
-      api?._injector?.get?.('SelectionManagerService') ||
-      api?._injector?.get?.(api.SelectionManagerService)
-
-    // попробуем вытащить текущий selection из сервиса
-    const cur =
-      svc?.currentSelection ||
-      svc?._currentSelection ||
-      svc?.selection ||
-      null
-
-    const fromSvc =
-      cur?.primary?.range?.startRow ??
-      cur?.range?.startRow ??
-      cur?.startRow ??
-      cur?.row
-
-    if (typeof fromSvc === 'number' && fromSvc >= 0) return fromSvc
-
-    // 2) API листа: массив selections
-    if (typeof sh.getSelections === 'function') {
-      const sels = sh.getSelections() || []
-      const sel = sels[0]
-      const fromList =
-        sel?.range?.startRow ??
-        sel?.startRow ??
-        sel?.row
-      if (typeof fromList === 'number' && fromList >= 0) return fromList
-    }
-
-    // 3) Старый API листа: одиночный selection
-    if (typeof sh.getSelection === 'function') {
-      const sel = sh.getSelection()
-      const fromSingle =
-        sel?.range?.startRow ??
-        sel?.startRow ??
-        sel?.row
-      if (typeof fromSingle === 'number' && fromSingle >= 0) return fromSingle
-    }
-  } catch {}
-
-  // fallback: первая строка данных (после заголовка)
-  return 1
+  if (range?.select) { 
+    try { range.select() } catch {} 
+    return 
+  }
+  
+  if (sheet.setSelection) { 
+    try { 
+      sheet.setSelection(firstRow, 0, lastRow - firstRow + 1, COLUMN_COUNT) 
+    } catch {} 
+  }
 }
 
 async function onDeleteClick() {
-  console.debug('[delete] active row0 =', getActiveRow0(univerAPI.value))
-
   const api = univerAPI.value 
   const workbook = api?.getActiveWorkbook?.()
   if (!workbook) return
@@ -331,57 +382,70 @@ async function onDeleteClick() {
   const sheet = workbook?.getActiveSheet?.()
   if (!sheet) return
 
+  // Получаем выделенные строки
+  const selectedRows = getSelectedRows()
+  if (selectedRows.length === 0) {
+    toast.add({ title: 'Нет выделенных строк для удаления', color: 'warning' })
+    return
+  }
+
   if (!deleteState.pending) {
-    const r0 = Math.max(1, getActiveRow0(api))
     deleteState.pending = true
-    deleteState.row0 = r0
-    selectWholeRow(sheet, r0)
+    deleteState.rows = selectedRows
+    selectRows(sheet, selectedRows)
 
     if (deleteState.timeout) {
       clearTimeout(deleteState.timeout)
     }
     deleteState.timeout = window.setTimeout(() => {
       deleteState.pending = false
-      deleteState.row0 = -1 
+      deleteState.rows = []
       deleteState.timeout = null
     }, 8000)
     return
   }
 
-  // подтверждение
-  const row0 = deleteState.row0 
-  if (row0 < 1) {
-    deleteState.pending = false 
-    deleteState.row0 = 1 
-    return
-  }
-
+  // Подтверждение удаления
   try {
-    const id = getIdFromCell(sheet, row0) 
-    if (id > 0) {
+    // Получаем ID для удаления с сервера
+    const ids = getIdsFromRows(sheet, deleteState.rows)
+    if (ids.length > 0) {
       await $fetch('/api/worktable/record-delete', {
         method: 'DELETE',
-        body: [id]
+        body: ids
       })
     }
 
-    const row1 = row0 + 1 
-    // A..D
-    sheet.getRange?.(`A${row1}:D${row1}`)?.setValues?.([[ '', '', '', '' ]])
-    // F..Y 
-    const fy = Array.from({ length: 20 }, () => '')
-    sheet.getRange?.(`F${row1}:Y${row1}`)?.setValues?.([fy])
-    // AB (ID)
-    sheet.getRange?.(`${colLetter(COLUMN_COUNT)}${row1}`)?.setValues?.([[ 0 ]])
+    // Очищаем данные в выделенных строках
+    for (const row of deleteState.rows) {
+      const row1 = row + 1
+      // A..D
+      sheet.getRange?.(`A${row1}:D${row1}`)?.setValues?.([[ '', '', '', '' ]])
+      // F..Y 
+      const fy = Array.from({ length: 20 }, () => '')
+      sheet.getRange?.(`F${row1}:Y${row1}`)?.setValues?.([fy])
+      // AB (ID)
+      sheet.getRange?.(`${colLetter(COLUMN_COUNT)}${row1}`)?.setValues?.([[ 0 ]])
+    }
+
+    const uSheet = api
+      .getActiveWorkbook()
+      .getSheetBySheetId?.(sheet.getSheetId())
+
+    if (uSheet) {
+      for (const row of [...deleteState.rows].sort((a, b) => b - a)) {
+        uSheet.deleteRows(row, 1)
+      }
+    }
 
     toast.add({
-      title: 'Запись удалена',
+      title: `Удалено ${deleteState.rows.length} записей`,
       color: 'success',
       icon: 'i-lucide-check'
     })
   } catch (e: any) {
     toast.add({
-      title: 'Не удалось удалить запись',
+      title: 'Не удалось удалить записи',
       color: 'error'
     })
     console.error(e)
@@ -390,7 +454,7 @@ async function onDeleteClick() {
       clearTimeout(deleteState.timeout)
     }
     deleteState.pending = false 
-    deleteState.row0 = -1 
+    deleteState.rows = []
     deleteState.timeout = null
   }
 }
@@ -405,8 +469,7 @@ function onKeydown (e: KeyboardEvent) {
 
 /* ===== инициализация Univer ===== */
 const initializeUniver = async (records: Record<string, any[]>) => {
-  await waitContainerReady('univer')
-
+  await waitContainerReady('univer');
   const { univerAPI: api } = createUniver({
     locale: LocaleType.RU_RU,
     locales: {
@@ -414,40 +477,37 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       [LocaleType.RU_RU]: mergeLocales(UniverPresetSheetsCoreRuRU)
     },
     presets: [UniverSheetsCorePreset({ container: 'univer', ribbonType: 'simple' })]
-  })
-  univerAPI.value = api
-
+  });
+  univerAPI.value = api;
   const lc = api.addEvent(api.Event.LifeCycleChanged, (p: { stage: any }) => {
-    if (p.stage === api.Enum.LifecycleStages.Rendered) showFallback.value = false
-  })
+    if (p.stage === api.Enum.LifecycleStages.Rendered) showFallback.value = false;
+  });
 
-  const sheets: Record<string, any> = {}
-  let i = 0
+  const sheets: Record<string, any> = {};
+  let i = 0;
   for (const [periodName, items] of Object.entries(records || {})) {
-    const id = `sheet-${++i}`
-    const data = Array.isArray(items) ? items : ([] as TransportAccounting[])
-    const rows = Math.max(1, data.length + 1)
-    const rowsToAdd = 1000 // запас пустых строк
+    const id = `sheet-${++i}`;
+    const data = Array.isArray(items) ? items : ([] as TransportAccounting[]);
+    const rowsToAdd = 1000;
+    const headerRow: Record<number, { v: any; s?: string }> = {};
+    HEADERS.forEach((h, col) => { headerRow[col] = { v: h, s: 'hdr' } });
 
-    const headerRow: Record<number, { v: any; s?: string }> = {}
-    HEADERS.forEach((h, col) => { headerRow[col] = { v: h, s: 'hdr' } })
+    const cellData: Record<number, Record<number, { v: any; s?: string }>> = { 0: headerRow };
+    for (let r = 0; r < data.length; r++) cellData[r + 1] = buildRowCells(data[r]!);
 
-    const cellData: Record<number, Record<number, { v: any }>> = { 0: headerRow }
-    for (let r = 0; r < data.length; r++) cellData[r + 1] = buildRowCells(data[r]!)
     for (let r = data.length + 1; r < data.length + 1 + rowsToAdd; r++) {
-      const empty: Record<number, { v: any }> = {}
-      for (let c = 0; c < COLUMN_COUNT; c++) empty[c] = { v: '' }
-      cellData[r] = empty
+      const empty: Record<number, { v: any; s?: string }> = {};
+      for (let c = 0; c < COLUMN_COUNT; c++) empty[c] = { v: '', s: 'allrows' };
+      cellData[r] = empty;
     }
 
-    const { columnData, rowData } = autoFitColumnAndRowData(cellData, COLUMN_COUNT)
-
+    const { columnData, rowData } = autoFitColumnAndRowData(cellData, COLUMN_COUNT);
     sheets[id] = {
       id,
       name: periodName,
       tabColor: '#009999',
       hidden: 0,
-      rowCount: data.length + 1 + rowsToAdd, // чтобы конфиг хранил общее число строк
+      rowCount: data.length + 1 + rowsToAdd,
       columnCount: COLUMN_COUNT,
       zoomRatio: 1,
       freeze: { startRow: 1, startColumn: 0, ySplit: 1, xSplit: 0 },
@@ -460,60 +520,68 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       rowHeader: { width: 50, hidden: 0 },
       columnHeader: { height: 20, hidden: 0 },
       rightToLeft: 0
-    }
+    };
   }
 
-  const order = Object.keys(sheets)
+  const order = Object.keys(sheets);
   univerAPI.value.createWorkbook({
     id: 'workbook-1',
     sheetOrder: order,
-    name: 'SLT - Транпортный учет',
+    name: 'SLT - Транспортный учет',
     styles: STYLES,
     sheets,
     resources: []
-  })
+  });
 
-  // Подписка на изменения (кросс-совместимая)
   const onExecuted = (cmd: any) => {
     try {
-      const id = String(cmd?.id || '')
+      const id = String(cmd?.id || '');
       const isWrite =
         id.includes('set-range-values') ||
         id.includes('paste') ||
         id.includes('clear-cell') ||
         id.includes('input') ||
-        id.includes('edit')
-      if (!isWrite) return
+        id.includes('edit');
+      if (!isWrite) return;
 
-      const wb = api.getActiveWorkbook?.()
+      const wb = api.getActiveWorkbook?.();
       const sheet =
         wb?.getActiveSheet?.() ||
-        (cmd?.params?.sheetId ? wb?.getSheetBySheetId?.(cmd.params.sheetId) : undefined)
-      if (!sheet) return
+        (cmd?.params?.sheetId ? wb?.getSheetBySheetId?.(cmd.params.sheetId) : undefined);
+      if (!sheet) return;
 
-      const p = cmd?.params || {}
-      const rng = p.range || (Array.isArray(p.ranges) ? p.ranges[0] : {}) || {}
-      let r0 = (rng.startRow ?? p.row ?? p.startRow ?? 0)
-      let r1 = (rng.endRow ?? p.row ?? p.endRow ?? r0)
-      for (let row0 = r0; row0 <= r1; row0++) { if (row0 !== 0) scheduleSave(sheet, row0) } // пропустить заголовок
+      const p = cmd?.params || {};
+      const rng = p.range || (Array.isArray(p.ranges) ? p.ranges[0] : {}) || {};
+      let r0 = (rng.startRow ?? p.row ?? p.startRow ?? 0);
+      let r1 = (rng.endRow ?? p.row ?? p.endRow ?? r0);
+      for (let row0 = r0; row0 <= r1; row0++) {
+        if (row0 !== 0) scheduleSave(sheet, row0);
+      }
     } catch {}
+  };
+
+  if (typeof api.onCommandExecuted === 'function') disposeCmd = api.onCommandExecuted(onExecuted);
+  else if (api.Event?.CommandExecuted && typeof api.addEvent === 'function') disposeCmd = api.addEvent(api.Event.CommandExecuted, onExecuted);
+
+  await lockHeaders(univerAPI.value, order, COLUMN_COUNT, 1);
+  await lockColumn(univerAPI.value, order, [5, 26, 27], { headerRow: 1 });
+
+  const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined;
+  const me: any = await $fetch('/api/auth/me', { headers });
+  currentRoleCode = me.roleCode;
+  console.log(`currentRoleCode: ${currentRoleCode}`);
+
+  if (currentRoleCode === 'ROLE_ADMIN' || currentRoleCode === 'ROLE_BUH') {
+    // Для админа и бухгалтера снимаем ограничения
+    await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
+  } else {
+    // Для остальных ролей применяем правила блокировки
+    await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
   }
-  if (typeof api.onCommandExecuted === 'function') disposeCmd = api.onCommandExecuted(onExecuted)
-  else if (api.Event?.CommandExecuted && typeof api.addEvent === 'function') disposeCmd = api.addEvent(api.Event.CommandExecuted, onExecuted)
 
-  // Защита + per-cell правила
-  await lockHeaders(univerAPI.value, order, COLUMN_COUNT, 1)
-  await lockColumn(univerAPI.value, order, [5, 26, 27], { headerRow: 1 })
-
-  const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
-  const me: any = await $fetch('/api/auth/me', { headers })
-  currentRoleCode = me?.value?.roleCode || me?.roleCode || ''
-  await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode)
-
-  bindSelectionWatcher(univerAPI.value)
-  window.addEventListener('keydown', onKeydown)
-  return lc
-}
+  window.addEventListener('keydown', onKeydown);
+  return lc;
+};
 
 // Запуск/очистка
 watch(() => props.records, async (n) => {
@@ -534,11 +602,5 @@ onUnmounted(() => {
   timers.forEach((t) => clearTimeout(t))
   timers.clear()
   window.removeEventListener('keydown', onKeydown)
-  disposeSelSubs.forEach(s => { 
-    try {
-      s?.unsubscribe?.()
-    } catch {}
-  })
-  disposeSelSubs = []
 })
 </script>
