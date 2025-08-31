@@ -158,6 +158,13 @@ function toPayload(values: any[]) {
   return draft
 }
 
+function getIdFromCell(sheet: any, row0: number): number {
+  const a1 = `${colLetter(COLUMN_COUNT)}${row0 + 1}`
+  const v = sheet.getRange?.(a1)?.getValues?.()?.[0]?.[0]
+  const n = Number(String(v ?? '').trim())
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 /* ===== автосохранение (дебаунс + индикатор) ===== */
 function scheduleSave(sheet: any, row0: number) {
   const key = `${sheet.getSheetId?.()}::${row0}`
@@ -172,9 +179,18 @@ function scheduleSave(sheet: any, row0: number) {
       const dto = toDto(values, listName)
 
       const empty = Object.entries(dto).every(([k, v]) => (k === 'id' ? v === 0 : v === '' || k === 'listName'))
-      if (!empty) {
-        // серверный handler теперь принимает и массив, и обёртки — но шлём как массив (как требует бэкенд)
-        await $fetch('/api/worktable/record-add', { method: 'POST', body: [dto] })
+      if (empty) return
+
+      if (dto.id > 0) {
+        await $fetch('/api/worktable/record-update', {
+          method: 'PATCH',
+          body: dto
+        })
+      } else {
+        await $fetch('/api/worktable/record-add', {
+          method: 'POST',
+          body: [dto]
+        })
       }
       console.log('Сохранено', dto)
     } catch (e: any) {
