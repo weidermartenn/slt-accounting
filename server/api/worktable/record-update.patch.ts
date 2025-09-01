@@ -72,7 +72,7 @@ export default defineEventHandler(async (event: H3Event) => {
       headers: { Authorization: `Bearer ${getCookie(event, "access_token")}` },
       body,
     })
-    }
+  }
 
   try {
     return await send(dtos)

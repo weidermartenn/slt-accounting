@@ -91,60 +91,61 @@ export async function lockColumn(
 export function applyCellLocks(row: any, role: RoleCode) {
   if (!row || typeof row !== 'object') return row
   row.cells ||= {}
-  const ensureCell = (ci: number) => (row.cells[ci] = row.cells[ci] || {})
+  const ensure = (ci: number) => (row.cells[ci] = row.cells[ci] || {})
 
-  // backend-only
-  ensureCell(25).editable = false
-  ensureCell(26).editable = false
-
-  // привилегированные роли: всё остальное доступно — и сразу выходим
+  // 1) ADMIN / BUH: всё доступно (кроме backend-only 25/26) и выходим
   if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH') {
     for (let ci = 0; ci < 28; ci++) {
-      if (ci !== 25 && ci !== 26) ensureCell(ci).editable = true
-      // и стили не ставим, чтобы ничего не подсвечивалось для админа
+      ensure(ci).editable = (ci !== 25 && ci !== 26)
       if (row.cells[ci]?.s) delete row.cells[ci].s
     }
-    return row                    // ← обязательно, иначе ниже снова заблокируешь
+    return row
   }
 
-  const hasValue = (ci: number) => {
-    const c = row.cells[ci]
-    const raw = c?.v ?? c?.text
+  // 2) по умолчанию всё редактируемо
+  for (let ci = 0; ci < 28; ci++) ensure(ci).editable = true
+
+  // backend-only всегда RO
+  ensure(25).editable = false
+  ensure(26).editable = false
+
+  // 3) хелпер для значений
+  const has = (ci: number) => {
+    const c = row.cells[ci]; const raw = c?.v ?? c?.text
     if (raw == null) return false
     const s = String(raw).trim().toLowerCase()
     return !(s === '' || s === 'null' || s === 'undefined' || s === 'nan' || s === 'false')
   }
 
-  // перед установкой условных стилей — очистим прежние, чтобы они «снимались»
-  ;[9, 16, 24].forEach(ci => { if (row.cells[ci]?.s) delete row.cells[ci].s })
+  // 4) точечные: 4 — RO; 9/16/24 — условно
+  ensure(4).editable = false
 
-  // условная подсветка (9 от 10+11, 16 от 19, 24 от 24)
-  if (hasValue(10) && hasValue(11)) 
-    ensureCell(9).s  = 'conditionallyFilled'
-  if (hasValue(19))                
-    ensureCell(16).s = 'conditionallyFilled'
-  if (hasValue(24))                
-    ensureCell(24).s = 'conditionallyFilled'
+  ;[9,16,24].forEach(ci => { if (row.cells[ci]?.s) delete row.cells[ci].s }) // сброс старых стилей
 
-  // editable правила
-  ensureCell(9).editable  = !(hasValue(10) && hasValue(11))
-  ensureCell(16).editable = !hasValue(19)
-  ensureCell(24).editable = !hasValue(24)
-  ensureCell(4).editable  = false
+  // 9 зависит от 10 и 11
+  ensure(9).editable = !(has(10) && has(11))
+  if (has(10) && has(11)) ensure(9).s = 'conditionallyFilled'
 
-  // когда 4,10,11,17,19 заполнены — замораживаем строку (кроме 24)
-  if ([4, 10, 11, 17, 19].every(hasValue)) {
+  // 16 зависит от 19
+  ensure(16).editable = !has(19)
+  if (has(19)) ensure(16).s = 'conditionallyFilled'
+
+  // 24 зависит от 24 (самозаполнение)
+  ensure(24).editable = !has(24)
+  if (has(24)) ensure(24).s = 'conditionallyFilled'
+
+  // 5) финальная «заморозка» строки (кроме 24)
+  if ([4, 10, 11, 17, 19].every(has)) {
     for (let ci = 0; ci <= 26; ci++) {
       if (ci === 24) continue
-      ensureCell(ci).editable = false
-      ensureCell(ci).s        = 'lockedRow'
+      ensure(ci).editable = false
+      ensure(ci).s = 'lockedRow'
     }
-    ensureCell(24).editable = !hasValue(24)
+    ensure(24).editable = !has(24)
   }
 
   return row
 }
-
 
 // применить правила к строкам
 export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
