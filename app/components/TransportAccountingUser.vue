@@ -1,5 +1,6 @@
 <template>
   <div class="relative" style="width: 100%; height: 90vh">
+    
     <!-- Оверлей-лоадер -->
     <div
       v-if="showFallback"
@@ -48,12 +49,6 @@
 </template>
 
 <script setup lang="ts">
-// import { UniverSheetsCorePreset } from "@univerjs/preset-sheets-core";
-// import UniverPresetSheetsCoreRuRU from "@univerjs/preset-sheets-core/locales/ru-RU";
-// import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
-// import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
-// import "@univerjs/preset-sheets-core/lib/index.css";
-// import "@univerjs/sheets-ui/lib/index.css";
 import { STYLES } from "./attributes/styles";
 import { HEADERS } from "./attributes/headers";
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
@@ -100,6 +95,8 @@ const deleteState = reactive<{
   rows: [],
   timeout: null,
 });
+
+const { $connectSocket } = useNuxtApp();
 
 /* ===== helpers ===== */
 function waitContainerReady(id = "univer") {
@@ -580,16 +577,9 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     ? useRequestHeaders(["cookie"])
     : undefined;
   const me: any = await $fetch("/api/auth/me", { headers });
-  console.log("me", me);
+
   currentRoleCode = me.roleCode;
-  console.log(`currentRoleCode: ${currentRoleCode}`);
-  if (currentRoleCode === "ROLE_ADMIN" || currentRoleCode === "ROLE_BUH") {
-    // Для админа и бухгалтера снимаем ограничения
-    await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
-  } else {
-    // Для остальных ролей применяем правила блокировки
-    await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
-  }
+  await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
   window.addEventListener("keydown", onKeydown);
   return lc;
 };
@@ -618,6 +608,8 @@ onMounted(async () => {
   if (Object.keys(props.records || {}).length > 0) {
     await initializeUniver(props.records);
   }
+
+  await $connectSocket('08.2025')
 });
 
 onUnmounted(() => {

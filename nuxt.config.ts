@@ -1,7 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
-  devtools: { enabled: true },
+  devtools: { enabled: false },
   modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/main.css'],
   nitro: {
@@ -40,6 +40,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       kingsApiBase: 'https://kings-logix.ru/api',
+      kingsApiBase1: 'https://kings-logix.ru',
       sltApiBase: 'http://77.222.43.243:8080/api'
     }
   },

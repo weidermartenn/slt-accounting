@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
         }
 
         if (user) {
-            const minimal = { id: user.id, confirmed: !!user.confirmed, roleCode: user.role?.code ?? null }
+            const minimal = { id: user.id, confirmed: !!user.confirmed, roleCode: user.role?.code ?? null, token: token }
             setCookie(event, 'u', Buffer.from(JSON.stringify(minimal)).toString('base64'), {
                 httpOnly: true, sameSite: 'lax', path: '/',
                 secure: process.env.NODE_ENV === 'production',
