@@ -42,6 +42,8 @@ export default defineEventHandler(async (event) => {
         // @ts-ignore
         const user = res?.object?.user
 
+        console.log(res?.object);
+
         if (token) {
             setCookie(event, 'access_token', token, {
                 httpOnly: true, sameSite: 'lax', path: '/',
@@ -51,7 +53,7 @@ export default defineEventHandler(async (event) => {
         }
 
         if (user) {
-            const minimal = { confirmed: !!user.confirmed, roleCode: user.role?.code ?? null }
+            const minimal = { id: user.id, confirmed: !!user.confirmed, roleCode: user.role?.code ?? null }
             setCookie(event, 'u', Buffer.from(JSON.stringify(minimal)).toString('base64'), {
                 httpOnly: true, sameSite: 'lax', path: '/',
                 secure: process.env.NODE_ENV === 'production',

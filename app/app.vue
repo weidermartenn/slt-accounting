@@ -5,6 +5,12 @@
 </template>
 
 <script setup lang="ts">
-import { TooltipProvider } from "reka-ui";
-const layout = "default";
+import type { LayoutKey } from '#build/types/layouts'  // <-- тип имён лэйаутов
+const route = useRoute()
+
+const layout = computed<false | LayoutKey>(() =>
+  route.path === '/auth' ? false : 'default'
+)
 </script>
+
+

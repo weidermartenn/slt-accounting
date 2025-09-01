@@ -85,5 +85,6 @@ const visibleItems = computed(() =>
 
 const logout = async () => {
     await $fetch('/api/auth/logout', { method: 'POST' })
+    await navigateTo('/')
 }
 </script>

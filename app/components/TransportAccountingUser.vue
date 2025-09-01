@@ -48,12 +48,12 @@
 </template>
 
 <script setup lang="ts">
-import { UniverSheetsCorePreset } from "@univerjs/preset-sheets-core";
-import UniverPresetSheetsCoreRuRU from "@univerjs/preset-sheets-core/locales/ru-RU";
-import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
-import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
-import "@univerjs/preset-sheets-core/lib/index.css";
-import "@univerjs/sheets-ui/lib/index.css";
+// import { UniverSheetsCorePreset } from "@univerjs/preset-sheets-core";
+// import UniverPresetSheetsCoreRuRU from "@univerjs/preset-sheets-core/locales/ru-RU";
+// import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
+// import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
+// import "@univerjs/preset-sheets-core/lib/index.css";
+// import "@univerjs/sheets-ui/lib/index.css";
 import { STYLES } from "./attributes/styles";
 import { HEADERS } from "./attributes/headers";
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
@@ -67,6 +67,13 @@ import {
 import { COL2FIELD } from "./attributes/col2field";
 import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
 import type { TransportAccountingUpdateDto, TransportAccountingUpdateRequest } from "~/entities/TransportAccountingUpdateRequest/types";
+
+let UniverSheetsCorePreset: any;
+let UniverPresetSheetsCoreRuRU: any;
+let UniverPresetSheetsCoreEnUS: any;
+let createUniver: any;
+let LocaleType: any;
+let mergeLocales: any;
 
 const props = defineProps<{ records: Record<string, any[]> }>();
 const toast = useToast();
@@ -600,6 +607,14 @@ watch(
 );
 
 onMounted(async () => {
+  await import("@univerjs/preset-sheets-core/lib/index.css");
+  await import("@univerjs/sheets-ui/lib/index.css");
+
+  ({ UniverSheetsCorePreset } = await import("@univerjs/preset-sheets-core"));
+  ({ default: UniverPresetSheetsCoreRuRU } = await import("@univerjs/preset-sheets-core/locales/ru-RU"));
+  ({ default: UniverPresetSheetsCoreEnUS } = await import("@univerjs/preset-sheets-core/locales/en-US"));
+  ({ createUniver, LocaleType, mergeLocales } = await import("@univerjs/presets"))
+
   if (Object.keys(props.records || {}).length > 0) {
     await initializeUniver(props.records);
   }
