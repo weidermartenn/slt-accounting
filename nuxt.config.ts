@@ -5,12 +5,27 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@pinia/nuxt'],
   css: ['~/assets/css/main.css'],
   nitro: {
-    sourceMap: false
+    sourceMap: false,
+    experimental: {
+      websocket: true
+    }
   },
   vite: {
     build: {
       sourcemap: false, cssMinify: true,
-      chunkSizeWarningLimit: 2000
+      chunkSizeWarningLimit: 2000,
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules')) {
+              if (id.includes('@univerjs')) return 'vendor-univer'
+              if (id.includes('@nuxt/ui') || id.includes('reka-ui')) return 'vendor-nuxtui'
+              if (id.includes('lucide') || id.includes('iconify')) return 'vendor-icons'
+              return 'vendor' 
+            }
+          }
+        }
+      }
     },
     css: {
       devSourcemap: false
