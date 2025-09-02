@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import type { TransportAccounting } from '~/entities/TransportAccountingDto/types'
+import type { TransportAccountingSR } from '~/entities/TransportAccountingSaveRequestDto/types'
+import type { TransportAccountingUpdateDto, TransportAccountingUpdateRequest } from '~/entities/TransportAccountingUpdateREquest/types'
 
 export const useSheetStore = defineStore('sheet', {
     state: () => ({
@@ -46,6 +48,45 @@ export const useSheetStore = defineStore('sheet', {
                 this.loading = false
             }
         },
-        // async addRecordToWorksheet
+        async addMany(dtos: TransportAccountingSR[]) {
+            if (!Array.isArray(dtos) || dtos.length === 0) return 
+            await $fetch('/api/worktable/record-add', {
+                method: 'POST',
+                body: dtos
+            })
+        },
+        async updateMany(dtos: TransportAccountingUpdateDto[]) {
+            if (!Array.isArray(dtos) || dtos.length === 0) return 
+            const body: TransportAccountingUpdateRequest = {
+                transportAccountingSaveRequestDtos: dtos
+            }
+            await $fetch('/api/worktable/record-update', {
+                method: 'PATCH',
+                body
+            })
+        },
+        async upsertOne(dto: TransportAccountingSR) {
+            if (Number(dto?.id) > 0) {
+                const body: TransportAccountingUpdateRequest = {
+                    transportAccountingSaveRequestDtos: [dto]
+                }
+                await $fetch('/api/worktable/record-update', {
+                    method: 'PATCH',
+                    body
+                })
+            } else {
+                await $fetch('/api/worktable/record-add', {
+                    method: 'POST',
+                    body: [dto]
+                })
+            }
+        },
+        async deleteByIds(ids: number[]) {
+            if (!Array.isArray(ids) || ids.length === 0) return 
+            await $fetch('/api/worktable/record-delete', {
+                method: 'DELETE',
+                body: ids
+            })
+        }
     }
 })

@@ -47,7 +47,7 @@ export async function lockColumn(
   opts?: { headerRow?: number; dataStartRow?: number }
 ) {
   const headerRow = opts?.headerRow ?? 1
-  const dataStartRow = Math.max(headerRow + 1, opts?.dataStartRow ?? headerRow + 1)
+  const dataStartRow = opts?.dataStartRow
 
   const wb = univerAPI.getActiveWorkbook()
   if (!wb) return
@@ -94,7 +94,7 @@ export function applyCellLocks(row: any, role: RoleCode) {
   const ensure = (ci: number) => (row.cells[ci] = row.cells[ci] || {})
 
   // 1) ADMIN / BUH: всё доступно (кроме backend-only 25/26) и выходим
-  if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH') {
+  if (role === 'ROLE_ADMIN' || role === 'ROLE_BUH' || role === 'ROLE_MANAGER') {
     for (let ci = 0; ci < 28; ci++) {
       ensure(ci).editable = (ci !== 25 && ci !== 26)
       if (row.cells[ci]?.s) delete row.cells[ci].s
@@ -150,8 +150,10 @@ export function applyCellLocks(row: any, role: RoleCode) {
 // применить правила к строкам
 export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
   const rows = sheetModel?.data?.rows?._;
+  console.log('--строки', rows)
   if (!rows) return 
 
+  console.log('--применяем правила к ячейками')
   Object.keys(rows).forEach((ri) => {
     if (ri === 'len') return
     applyCellLocks(rows[ri], role)
@@ -163,10 +165,15 @@ export async function applyEditableRules(univerAPI: any, role: RoleCode) {
   const workbook = univerAPI.getActiveWorkbook?.()
   if (!workbook) return
 
+  console.log("--книга получена")
+
   const sheets = workbook.getSheets?.() ?? []
+  console.log("--листы получены", sheets)
   for (const s of sheets) {
     const snap = s.getSnapshot?.() ?? s.getModel?.() ?? s
+    console.log('--снепшот листа', snap, s)
     if (snap?.data?.rows?._) {
+      console.log("--применяем правила")
       applyLocksForSheet(snap, role)
 
       if (typeof s.setSnapshot === 'function') {

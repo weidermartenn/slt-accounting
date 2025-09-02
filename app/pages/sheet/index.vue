@@ -2,7 +2,10 @@
   <UApp>
     <div v-cloak>
       <ClientOnly>
-        <TransportAccountingUser :records="records" />
+        <TransportAccountingUser 
+          v-if="Object.keys(records ||{}).length"
+          :records="records" 
+        />
         <template #fallback>
           <div
             class="h-screen flex items-center justify-center gap-3 px-4 py-3"
@@ -32,14 +35,26 @@ useHead({
   ],
 });
 
+import { useDebounceFn } from "@vueuse/core";
 import TransportAccountingUser from "~/components/TransportAccountingUser.vue";
 import { useSheetStore } from "~/stores/sheet-store";
 
 const store = useSheetStore();
 const records = computed(() => store.records);
 
-onMounted(() => {
-  store.fetchAll();
+const headers = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
+const me: any = await $fetch("/api/auth/me", { headers }).catch(() => null);
+
+const fetchRecords = async (me: any) =>{
+  if (me?.roleCode !== "ROLE_ADMIN" && me?.roleCode !== "ROLE_BUH" && me?.roleCode !== "ROLE_MANAGER") {
+    store.fetchAll();
+  } else {
+    store.fetchAllRoleAdmin();
+  }
+}
+
+onMounted(async () => {
+  await fetchRecords(me);
 });
 </script>
 
