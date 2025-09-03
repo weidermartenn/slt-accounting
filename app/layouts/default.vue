@@ -51,20 +51,13 @@
           <span class="text-xl font-semibold text-white text-center"
             >Администрирование</span
           >
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 gap-4">
             <UButton
               @click="$router.push('/admin/employees')"
               class="slideover-button"
             >
               <UIcon name="i-lucide-users" class="h-16 w-16" />
               <span>Сотрудники</span>
-            </UButton>
-            <UButton
-              @click="$router.push('/admin/sheet')"
-              class="slideover-button"
-            >
-              <UIcon name="i-lucide-clipboard-list" class="h-16 w-16" />
-              <span>Транспортный учет</span>
             </UButton>
           </div>
         </div>
@@ -134,6 +127,6 @@ const visibleItems = computed(() =>
 
 const logout = async () => {
   await $fetch("/api/auth/logout", { method: "POST" });
-  await navigateTo("/");
+  await navigateTo("/auth");
 };
 </script>

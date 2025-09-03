@@ -39,8 +39,8 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     public: {
+      wsBackendURI: 'wss:/kings-logix.ru',
       kingsApiBase: 'https://kings-logix.ru/api',
-      kingsApiBase1: 'https://kings-logix.ru',
       sltApiBase: 'http://77.222.43.243:8080/api'
     }
   },

@@ -1,7 +1,7 @@
 export default defineNuxtRouteMiddleware(async (to) => {
     const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
     const me = await $fetch<{ confirmed?: boolean } | null>('/api/auth/me', { headers })
-    const confirmed = !!me?.confirmed
+    const confirmed = me?.confirmed
 
     if (to.path.startsWith('/auth')) {
         if (confirmed && to.path !== '/') return navigateTo('/')

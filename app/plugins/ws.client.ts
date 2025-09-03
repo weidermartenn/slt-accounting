@@ -1,6 +1,6 @@
 // plugins/ws.client.ts
 export default defineNuxtPlugin(async (nuxtApp) => {
-  const { public: { kingsApiBase1 } } = useRuntimeConfig();
+  const { public: { wsBackendURI } } = useRuntimeConfig();
 
   // узнаём пользователя/токен
   const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined;
@@ -11,12 +11,12 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const token  = me?.token
 
   // финальный raw WS URL
-  const url = `wss:/kings-logix.ru/socket/tables/${table}/${userId}?token=${encodeURIComponent(token)}`;
+  const url = `${wsBackendURI}/socket/tables/${table}/${userId}?token=${encodeURIComponent(token)}`;
 
   // отладка
-  console.log('[raw-ws] url:', url);
-  console.log('[raw-ws] userId:', userId);
-  console.log('[raw-ws] token:', token ? '(present)' : '(empty)');
+//   console.log('[raw-ws] url:', url);
+//   console.log('[raw-ws] userId:', userId);
+//   console.log('[raw-ws] token:', token ? '(present)' : '(empty)');
 
   let ws: WebSocket | null = null;
   let reconnectTimer: number | null = null;

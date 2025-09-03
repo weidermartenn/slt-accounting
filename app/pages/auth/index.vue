@@ -18,8 +18,20 @@
       v-cloak
       class="w-full min-h-screen flex items-center justify-center p-4"
     >
-      <UCard class="w-sm md:w-md lg:w-lg">
+      <UCard 
+        :ui="{ 
+          'root': 'w-sm md:w-md lg:w-lg',
+          'body': 'text-black bg-zinc-100' 
+        }"
+        >
         <UStepper
+          :ui="{
+            'icon': 'text-zinc-100',
+            'title': 'text-zinc-900',
+            'trigger': 'bg-zinc-900',
+            'separator': 'bg-zinc-900',
+          }"
+          color="success"
           :items="items"
           :model-value="step"
           @update:model-value="onStepChange"
@@ -35,6 +47,9 @@
             <span class="font-semibold">Номер телефона</span>
             <ClientOnly>
               <UInput
+                :ui="{
+                  'base': 'bg-zinc-100 text-zinc-900',
+                }"
                 size="xl"
                 v-model="phone"
                 icon="i-lucide-smartphone"
@@ -46,7 +61,9 @@
                 <USkeleton class="w-full h-10"></USkeleton>
               </template>
             </ClientOnly>
-            <UButton class="w-full justify-center" type="submit" size="lg"
+            <UButton 
+              :ui="{ 'base': 'bg-zinc-900 text-zinc-100' }"
+              class="w-full justify-center" type="submit" size="lg"
               >Получить</UButton
             >
           </div>
@@ -79,13 +96,13 @@
               maxlength="1"
               inputmode="numeric"
               class="w-14"
-              :ui="{ base: 'text-center text-2xl py-3' }"
+              :ui="{ base: 'text-center font-medium text-2xl py-3 bg-zinc-100 text-zinc-900' }"
             >
             </UInput>
           </div>
           <div class="flex gap-3">
             <UButton
-              class="flex-1 justify-center"
+             :ui="{ 'base': 'flex-1 justify-center bg-zinc-900 text-zinc-100' }"
               type="submit"
               size="lg"
               :loading="isRouting"
@@ -113,7 +130,6 @@ useHead({
   ],
 });
 
-import type { FormSubmitEvent } from "@nuxt/ui";
 import { vMaska } from "maska/vue";
 import type { StepperItem } from "@nuxt/ui";
 import { postUserLoginCode, postUserConfirmCode } from "./model/user";
@@ -210,15 +226,25 @@ const onConfirmCode = async () => {
   const res: any = await postUserConfirmCode(clearPhone.value, codeValue.value);
   if (res?.operationResult === "OK") {
     user.value = res.object?.user || null;
-    const isRegistered = !!user.value?.confirmed; // критерий
+    
+    try { await $fetch('/api/auth/me') } catch {}
+
+    const u = useCookie<string | null>('u')
+    let confirmed = false
+
+    if (u.value) {
+      try {
+        confirmed = !!JSON.parse(atob(u.value)).confirmed 
+      } catch {}
+    }
+
+    isRouting.value = true
 
     try {
-      isRouting.value = true;
-      await navigateTo(isRegistered ? "/" : "/auth");
+      return await navigateTo(confirmed ? "/" : "/auth", { replace: true, external: true });
     } finally {
       isRouting.value = false;
     }
-    console.log(res);
     toast.add({
       title: "Успешно",
       color: "success",

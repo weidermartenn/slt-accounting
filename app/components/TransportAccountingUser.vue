@@ -13,8 +13,8 @@
 
     <!-- Индикатор сохранения -->
     <div
-      v-if="showSaving"
-      class="absolute right-90 -top-13 z-50 flex items-center bg-zinc-600 text-white rounded-sm px-4 py-2 shadow"
+      
+      class="absolute left-1/2 -translate-x-1/2 -top-13 z-50 flex items-center text-zinc-900 rounded-sm px-4 py-2 shadow"
     >
       <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
       <span class="ml-2">Сохранение</span>
@@ -22,7 +22,7 @@
 
     <!-- Кнопки управления -->
     <div class="absolute right-5 -top-12 z-50 flex gap-2">
-      <UButton
+      <!-- <UButton
         :disabled="!hasChanges"
         @click="saveChanges"
         color="warning"
@@ -30,14 +30,14 @@
         icon="i-lucide-save"
       >
         Сохранить запись
-      </UButton>
+      </UButton> -->
       <UButton
         :color="deleteState.pending ? 'error' : 'secondary'"
         :variant="deleteState.pending ? 'solid' : 'soft'"
         icon="i-lucide-trash-2"
         @click="onDeleteClick"
       >
-        {{ deleteState.pending ? "Подтвердите удаление" : "Удалить строку" }}
+        {{ deleteState.pending ? "Подтвердите удаление" : "Удалить строки" }}
       </UButton>
     </div>
 
