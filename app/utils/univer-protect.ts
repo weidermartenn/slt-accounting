@@ -150,10 +150,7 @@ export function applyCellLocks(row: any, role: RoleCode) {
 // применить правила к строкам
 export function applyLocksForSheet(sheetModel: any, role: RoleCode) {
   const rows = sheetModel?.data?.rows?._;
-  console.log('--строки', rows)
   if (!rows) return 
-
-  console.log('--применяем правила к ячейками')
   Object.keys(rows).forEach((ri) => {
     if (ri === 'len') return
     applyCellLocks(rows[ri], role)
@@ -165,15 +162,10 @@ export async function applyEditableRules(univerAPI: any, role: RoleCode) {
   const workbook = univerAPI.getActiveWorkbook?.()
   if (!workbook) return
 
-  console.log("--книга получена")
-
   const sheets = workbook.getSheets?.() ?? []
-  console.log("--листы получены", sheets)
   for (const s of sheets) {
     const snap = s.getSnapshot?.() ?? s.getModel?.() ?? s
-    console.log('--снепшот листа', snap, s)
     if (snap?.data?.rows?._) {
-      console.log("--применяем правила")
       applyLocksForSheet(snap, role)
 
       if (typeof s.setSnapshot === 'function') {

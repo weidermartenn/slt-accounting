@@ -13,7 +13,7 @@
 
     <!-- Индикатор сохранения -->
     <div
-      
+      v-if="showSaving"
       class="absolute left-1/2 -translate-x-1/2 -top-13 z-50 flex items-center text-zinc-900 rounded-sm px-4 py-2 shadow"
     >
       <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
@@ -622,17 +622,6 @@ watch(
 );
 
 onUnmounted(() => {
-  const { $ws } = useNuxtApp()
-  if (!$ws) return
-
-  const onMessage = (ev: MessageEvent) => {
-    try {
-      const msg = JSON.parse(ev.data);
-
-      if (msg?.msg) console.log("[WS] сообщение от сервера:", msg.msg);
-    } catch {}
-  }
-
   if (disposeCmd?.dispose) disposeCmd.dispose();
   timers.forEach((t) => clearTimeout(t));
   timers.clear();

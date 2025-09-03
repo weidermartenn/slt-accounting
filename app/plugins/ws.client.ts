@@ -1,7 +1,6 @@
-// plugins/ws.client.ts
-export default defineNuxtPlugin(async (nuxtApp) => {
-  const { public: { wsBackendURI } } = useRuntimeConfig();
+import { isEmptyBindingElement } from "typescript";
 
+export default defineNuxtPlugin(async (nuxtApp) => {
   // узнаём пользователя/токен
   const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined;
   const me: any = await $fetch('/api/auth/me', { headers }).catch(() => null);
@@ -11,7 +10,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const token  = me?.token
 
   // финальный raw WS URL
-  const url = `${wsBackendURI}/socket/tables/${table}/${userId}?token=${encodeURIComponent(token)}`;
+  const url = `wss:/kings-logix.ru/socket/tables/${table}/${userId}?token=${encodeURIComponent(token)}`;
 
   // отладка
 //   console.log('[raw-ws] url:', url);
@@ -22,6 +21,12 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   let reconnectTimer: number | null = null;
   let attempts = 0;
 
+  const listeners = new Set<(msg:any)=>void>();
+  const wsOnMessage = (fn: (msg: any) => void) => { 
+    listeners.add(fn); 
+    return () => listeners.delete(fn);
+  };
+
   const connect = () => {
     // безопасность: не создаём второй сокет поверх
     if (ws && ws.readyState === WebSocket.OPEN) return;
@@ -31,17 +36,16 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 
       ws.onopen = () => {
         attempts = 0;
+        ws!.send(JSON.stringify({ type: 'subscribe', table, userId }));
         console.log('[raw-ws] ✅ open');
       };
 
       ws.onmessage = (ev) => {
         // если payload — JSON, можно парсить:
+        let payload: any = ev.data;
         try {
-          const msg = JSON.parse(ev.data as string);
-          console.log('[raw-ws] message(json):', msg);
-        } catch {
-          console.log('[raw-ws] message(text):', ev.data);
-        }
+          payload = JSON.parse(ev.data as string);
+        } catch {}
       };
 
       ws.onerror = (ev) => {
@@ -83,7 +87,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   };
 
   // прокидываем в Nuxt
-  nuxtApp.provide('ws', ws);
+  nuxtApp.provide('wsOnMessage', wsOnMessage);
   nuxtApp.provide('wsSend', sendJSON);
   nuxtApp.provide('wsReconnect', () => { if (reconnectTimer) clearTimeout(reconnectTimer); connect(); });
   nuxtApp.provide('wsDisconnect', disconnect);
