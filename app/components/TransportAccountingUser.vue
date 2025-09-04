@@ -42,7 +42,11 @@
     </div>
 
     <!-- Контейнер Univer -->
-    <div id="univer" :class="{ 'opacity-0': showFallback }" style="width: 100%; height: 100%" />
+    <div
+      id="univer"
+      :class="{ 'opacity-0': showFallback }"
+      style="width: 100%; height: 100%"
+    />
   </div>
 </template>
 
@@ -51,14 +55,27 @@
 import { STYLES } from "./attributes/styles";
 import { HEADERS } from "./attributes/headers";
 import { COL2FIELD } from "./attributes/col2field";
+import { createTempId } from "~/utils/tempId"
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
 import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
-import type { TransportAccountingUpdateDto, TransportAccountingUpdateRequest } from "~/entities/TransportAccountingUpdateRequest/types";
+import type {
+  TransportAccountingUpdateDto,
+  TransportAccountingUpdateRequest,
+} from "~/entities/TransportAccountingUpdateRequest/types";
 import { autoFitColumnAndRowData } from "~/utils/autoFit";
-import { lockHeaders, lockColumn, colLetter, applyEditableRules } from "~/utils/univer-protect";
+import {
+  lockHeaders,
+  lockColumn,
+  colLetter,
+  applyEditableRules,
+} from "~/utils/univer-protect";
 import type { RoleCode } from "~/utils/roles";
 import { useSheetStore } from "~/stores/sheet-store";
-import { get } from "@univerjs/presets";
+import { ArrangeTypeEnum, get } from "@univerjs/presets";
+import {
+  convertPositionCellToSheetOverGrid,
+  degToRad,
+} from "@univerjs/preset-sheets-core";
 
 const toast = useToast();
 const sheetStore = useSheetStore();
@@ -77,9 +94,15 @@ async function ensureUniverLoaded() {
   await import("@univerjs/preset-sheets-core/lib/index.css");
   await import("@univerjs/sheets-ui/lib/index.css");
   ({ UniverSheetsCorePreset } = await import("@univerjs/preset-sheets-core"));
-  ({ default: UniverPresetSheetsCoreRuRU } = await import("@univerjs/preset-sheets-core/locales/ru-RU"));
-  ({ default: UniverPresetSheetsCoreEnUS } = await import("@univerjs/preset-sheets-core/locales/en-US"));
-  ({ createUniver, LocaleType, mergeLocales } = await import("@univerjs/presets"));
+  ({ default: UniverPresetSheetsCoreRuRU } = await import(
+    "@univerjs/preset-sheets-core/locales/ru-RU"
+  ));
+  ({ default: UniverPresetSheetsCoreEnUS } = await import(
+    "@univerjs/preset-sheets-core/locales/en-US"
+  ));
+  ({ createUniver, LocaleType, mergeLocales } = await import(
+    "@univerjs/presets"
+  ));
   libsLoaded = true;
 }
 
@@ -113,7 +136,6 @@ const headers = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 const me: any = await $fetch("/api/auth/me", { headers });
 currentRoleCode = me.roleCode;
 
-
 // ===== helpers =====
 function waitContainerReady(id = "univer") {
   return new Promise<void>(async (resolve, reject) => {
@@ -134,7 +156,10 @@ function waitContainerReady(id = "univer") {
 
 function buildRowCells(rec: TransportAccounting) {
   const cell = (v: any, col: number) =>
-    ({ v: v ?? "", s: LOCKED_COLS.value.includes(col) ? "lockedCol" : "allrows" } as { v: any; s: string; });
+    ({
+      v: v ?? "",
+      s: LOCKED_COLS.value.includes(col) ? "lockedCol" : "allrows",
+    } as { v: any; s: string });
 
   const row: Record<number, { v: any; s: string }> = {};
   row[0] = cell(rec?.dateOfPickup, 0);
@@ -208,10 +233,10 @@ function readRowValues(sheet: any, row0: number): string[] {
 function isRowEmpty(values: any[]): boolean {
   for (let c = 0; c < COLUMN_COUNT; c++) {
     const key = COL2FIELD[c];
-    if (!key || key === 'id') continue;
+    if (!key || key === "id") continue;
     const raw = values[c];
-    const s = (raw == null ? '' : String(raw)).trim().toLowerCase();
-    if (s !== '' && s !== 'null' && s !== 'undefined') return false;
+    const s = (raw == null ? "" : String(raw)).trim().toLowerCase();
+    if (s !== "" && s !== "null" && s !== "undefined") return false;
   }
   return true;
 }
@@ -252,7 +277,8 @@ function toDto(values: any[], listName: string): TransportAccountingSR {
   for (let c = 0; c < COLUMN_COUNT; c++) {
     const key = COL2FIELD[c];
     if (!key) continue;
-    draft[key as keyof TransportAccountingSR] = values[c] ?? (key === "id" ? 0 : "");
+    draft[key as keyof TransportAccountingSR] =
+      values[c] ?? (key === "id" ? 0 : "");
   }
 
   for (const k in draft) {
@@ -300,14 +326,25 @@ function scheduleSave(sheet: any, row0: number) {
         const dto: TransportAccountingSR = toDto(values, listName);
 
         if (!dto.id && isRowEmpty(values)) {
-          hasChanges.value = false
+          if (!sheet.getRange(row0, COLUMN_COUNT - 1).getValue()) {
+            dto.id = createTempId();
+            sheet.getRange(row0, COLUMN_COUNT - 1).setValue(dto.id);
+          }
+          hasChanges.value = false;
         } else {
-          // централизовано через стор
-          await sheetStore.upsertOne(dto);
+          console.log("[save] начало сохранения строки", row0);
+          console.log("[save] данные", values);
+          console.log("[save] dto для отправки", dto);
+          // обновляем локально
+          sheetStore.applyLocalChange(dto);
         }
 
         try {
-          await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
+          await sheetStore.upsertOne(dto);
+          await applyEditableRules(
+            univerAPI.value,
+            currentRoleCode as RoleCode
+          );
         } catch {
           toast.add({
             title: "Не удалось применить правила редактирования",
@@ -346,7 +383,10 @@ async function saveChanges() {
 
     const selectedRows = getSelectedRows();
     if (selectedRows.length === 0) {
-      toast.add({ title: "Нет выделенных строк для сохранения", color: "warning" });
+      toast.add({
+        title: "Нет выделенных строк для сохранения",
+        color: "warning",
+      });
       return;
     }
 
@@ -354,7 +394,7 @@ async function saveChanges() {
     for (const row of selectedRows) {
       const values = readRowValues(sheet, row);
       if (isRowEmpty(values)) {
-        const idCell = String(values[COLUMN_COUNT - 1] ?? '').trim();
+        const idCell = String(values[COLUMN_COUNT - 1] ?? "").trim();
         const hasId = Number(idCell) > 0;
         if (!hasId) continue;
       }
@@ -391,7 +431,9 @@ function selectRows(sheet: any, rows: number[]) {
   const a1 = `A${row1}:${colLetter(COLUMN_COUNT)}${row2}`;
   const range = sheet.getRange?.(a1);
   if (range?.select) {
-    try { range.select(); } catch {}
+    try {
+      range.select();
+    } catch {}
     return;
   }
 
@@ -435,7 +477,9 @@ async function onDeleteClick() {
       await sheetStore.deleteByIds(ids);
     }
 
-    const uSheet = api.getActiveWorkbook().getSheetBySheetId?.(sheet.getSheetId());
+    const uSheet = api
+      .getActiveWorkbook()
+      .getSheetBySheetId?.(sheet.getSheetId());
     if (uSheet) {
       for (const row of [...deleteState.rows].sort((a, b) => b - a)) {
         uSheet.deleteRows(row, 1);
@@ -446,7 +490,6 @@ async function onDeleteClick() {
       color: "success",
       icon: "i-lucide-check",
     });
-
   } catch (e: any) {
     toast.add({ title: "Не удалось удалить записи", color: "error" });
     console.error(e);
@@ -462,13 +505,14 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key !== "Delete") return;
   const t = e.target as HTMLElement | null;
   const tag = t?.tagName?.toLowerCase?.();
-  if (tag === "input" || tag === "textarea" || (t as any)?.isContentEditable) return;
+  if (tag === "input" || tag === "textarea" || (t as any)?.isContentEditable)
+    return;
   if (!deleteState.pending) onDeleteClick();
 }
 
 // ===== инициализация Univer =====
 const initializeUniver = async (records: Record<string, any[]>) => {
-  await ensureUniverLoaded();          // важный фикс гонки с LocaleType
+  await ensureUniverLoaded(); // важный фикс гонки с LocaleType
   await waitContainerReady("univer");
 
   const { univerAPI: api } = createUniver({
@@ -477,13 +521,16 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS),
       [LocaleType.RU_RU]: mergeLocales(UniverPresetSheetsCoreRuRU),
     },
-    presets: [UniverSheetsCorePreset({ container: "univer", ribbonType: "simple" })],
+    presets: [
+      UniverSheetsCorePreset({ container: "univer", ribbonType: "simple" }),
+    ],
   });
 
-  univerAPI.value = api;
+  univerAPI.value = api
 
   const lc = api.addEvent(api.Event.LifeCycleChanged, (p: { stage: any }) => {
-    if (p.stage === api.Enum.LifecycleStages.Rendered) showFallback.value = false;
+    if (p.stage === api.Enum.LifecycleStages.Rendered)
+      showFallback.value = false;
   });
 
   // формируем листы
@@ -495,17 +542,25 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     const rowsToAdd = 1000;
 
     const headerRow: Record<number, { v: any; s?: string }> = {};
-    HEADERS.forEach((h, col) => { headerRow[col] = { v: h, s: "hdr" }; });
+    HEADERS.forEach((h, col) => {
+      headerRow[col] = { v: h, s: "hdr" };
+    });
 
-    const cellData: Record<number, Record<number, { v: any; s?: string }>> = { 0: headerRow };
-    for (let r = 0; r < data.length; r++) cellData[r + 1] = buildRowCells(data[r]!);
+    const cellData: Record<number, Record<number, { v: any; s?: string }>> = {
+      0: headerRow,
+    };
+    for (let r = 0; r < data.length; r++)
+      cellData[r + 1] = buildRowCells(data[r]!);
     for (let r = data.length + 1; r < data.length + 1 + rowsToAdd; r++) {
       const empty: Record<number, { v: any; s?: string }> = {};
       for (let c = 0; c < COLUMN_COUNT; c++) empty[c] = { v: "", s: "allrows" };
       cellData[r] = empty;
     }
 
-    const { columnData, rowData } = autoFitColumnAndRowData(cellData, COLUMN_COUNT);
+    const { columnData, rowData } = autoFitColumnAndRowData(
+      cellData,
+      COLUMN_COUNT
+    );
     sheets[id] = {
       id,
       name: periodName,
@@ -551,7 +606,9 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       const wb = api.getActiveWorkbook?.();
       const sheet =
         wb?.getActiveSheet?.() ||
-        (cmd?.params?.sheetId ? wb?.getSheetBySheetId?.(cmd.params.sheetId) : undefined);
+        (cmd?.params?.sheetId
+          ? wb?.getSheetBySheetId?.(cmd.params.sheetId)
+          : undefined);
       if (!sheet) return;
 
       const p = cmd?.params || {};
@@ -573,11 +630,21 @@ const initializeUniver = async (records: Record<string, any[]>) => {
 
   // блокировки
   await lockHeaders(univerAPI.value, order, COLUMN_COUNT, 1);
-  if (currentRoleCode === "ROLE_ADMIN" || currentRoleCode === "ROLE_BUH" || currentRoleCode === "ROLE_MANAGER") {
-    await lockColumn(univerAPI.value, order, [26, 27], { headerRow: 1, dataStartRow: 2 });
+  if (
+    currentRoleCode === "ROLE_ADMIN" ||
+    currentRoleCode === "ROLE_BUH" ||
+    currentRoleCode === "ROLE_MANAGER"
+  ) {
+    await lockColumn(univerAPI.value, order, [26, 27], {
+      headerRow: 1,
+      dataStartRow: 2,
+    });
     LOCKED_COLS.value = [26, 27];
   } else {
-    await lockColumn(univerAPI.value, order, [5, 26, 27], { headerRow: 1, dataStartRow: 2 });
+    await lockColumn(univerAPI.value, order, [5, 26, 27], {
+      headerRow: 1,
+      dataStartRow: 2,
+    });
     LOCKED_COLS.value = [5, 26, 27];
   }
 
@@ -590,12 +657,6 @@ const initializeUniver = async (records: Record<string, any[]>) => {
 
 // ===== lifecycle =====
 onMounted(async () => {
-  // узнаём роль и подтягиваем данные
-  const headers = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
-  const me: any = await $fetch("/api/auth/me", { headers }).catch(() => null);
-  currentRoleCode = me?.roleCode || "";
-  console.log("Текущая роль", currentRoleCode);
-
   // инициализация Univer (загрузка либ + отрисовка)
   await ensureUniverLoaded();
   const hasData = Object.keys(sheetStore.records || {}).length > 0;
@@ -603,22 +664,51 @@ onMounted(async () => {
     showFallback.value = true;
     await initializeUniver(sheetStore.records as Record<string, any[]>);
   }
+  // узнаём роль и подтягиваем данные
+  const headers = import.meta.server
+    ? useRequestHeaders(["cookie"])
+    : undefined;
+  const me: any = await $fetch("/api/auth/me", { headers }).catch(() => null);
+  currentRoleCode = me?.roleCode || "";
+
+  console.log("Текущая роль", currentRoleCode);
+
+  const { $wsOnMessage } = useNuxtApp();
+  
+  if ($wsOnMessage) {
+    // @ts-ignore
+    $wsOnMessage((msg: SocketEvent) => {
+      const listName = getName(); // текущий активный лист
+      sheetStore.applySocketMessage(msg, listName);
+    });
+  }
 });
 
-// реагируем на обновление данных в сторе (например, после фильтров/перезагрузки)
-let inited = false
 watch(
   () => sheetStore.records,
-  async (n) => {
-    const cnt = Object.keys(n || {}).length;
-    if (cnt > 0) {
-      if (!inited) {
-        await initializeUniver(n as Record<string, any[]>);
-        inited = true
-      } 
-    }
+  (newRecords) => {
+    if (!univerAPI.value) return;
+
+    const api = univerAPI.value;
+    const wb = api.getActiveWorkbook();
+    if (!wb) return;
+
+    const activeListName = getName();
+
+    const sheetSnapshot = univerAPI.value
+      .getActiveWorkbook()
+      .getActiveSheet()
+      .getSheet()
+      .getSnapshot()
+      .cellData;
+
+    const sheet = wb.getActiveSheet()
+    console.log('[watch] sheetSnapshot', sheetSnapshot);
+    console.log('[watch] newRecords', newRecords);
+    console.log("[watch] обнаружены изменения в records");
+
   },
-  { deep: false, immediate: false }
+  { deep: true, immediate: false }
 );
 
 onUnmounted(() => {

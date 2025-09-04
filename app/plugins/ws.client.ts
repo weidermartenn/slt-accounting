@@ -1,4 +1,5 @@
 import { isEmptyBindingElement } from "typescript";
+import { useSheetStore } from "~/stores/sheet-store";
 
 export default defineNuxtPlugin(async (nuxtApp) => {
   // узнаём пользователя/токен
@@ -42,10 +43,19 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 
       ws.onmessage = (ev) => {
         // если payload — JSON, можно парсить:
-        let payload: any = ev.data;
+        console.log('[socket] получено сообщение', ev.data)
         try {
-          payload = JSON.parse(ev.data as string);
-        } catch {}
+          const payload = JSON.parse(ev.data);
+          console.log('[socket] разобранное сообщение', {
+            type: payload.type, 
+            userId: payload.userId,
+            data: payload.TransportAccountingDto || payload.listToDel
+          })
+          
+          listeners.forEach(fn => fn(payload))
+        } catch (error) {
+          console.error('[socket] ошибка парсинга', error)
+        }
       };
 
       ws.onerror = (ev) => {
