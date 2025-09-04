@@ -1,5 +1,5 @@
 let tempIdCounter = -1;
 
-function createTempId() {
+export function createTempId() {
     return tempIdCounter--;
 }

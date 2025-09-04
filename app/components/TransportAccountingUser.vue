@@ -55,7 +55,7 @@
 import { STYLES } from "./attributes/styles";
 import { HEADERS } from "./attributes/headers";
 import { COL2FIELD } from "./attributes/col2field";
-import { createTempId } from "~/utils/tempId"
+import { createTempId } from "~/utils/tempId";
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
 import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
 import type {
@@ -120,6 +120,7 @@ const univerAPI = ref<any>(null);
 let disposeCmd: any;
 let currentRoleCode = "";
 const timers = new Map<string, number>();
+const currentEditingRow = ref<number | null>(null);
 
 const deleteState = reactive<{
   pending: boolean;
@@ -307,6 +308,7 @@ function getIdsFromRows(sheet: any, rows: number[]): number[] {
   return ids;
 }
 
+const tempIdToRowMap = ref(new Map<number, number>()); // tmepId -> rowIndex
 // ===== автосохранение =====
 function scheduleSave(sheet: any, row0: number) {
   const key = `${sheet.getSheetId?.()}::${row0}`;
@@ -315,6 +317,7 @@ function scheduleSave(sheet: any, row0: number) {
     timers.delete(key);
   }
   hasChanges.value = true;
+  currentEditingRow.value = row0;
 
   const t = window.setTimeout(
     async () => {
@@ -327,8 +330,9 @@ function scheduleSave(sheet: any, row0: number) {
 
         if (!dto.id && isRowEmpty(values)) {
           if (!sheet.getRange(row0, COLUMN_COUNT - 1).getValue()) {
-            dto.id = createTempId();
-            sheet.getRange(row0, COLUMN_COUNT - 1).setValue(dto.id);
+            const tempId = createTempId();
+            sheet.getRange(row0, COLUMN_COUNT - 1).setValue(tempId);
+            tempIdToRowMap.value.set(tempId, row0);
           }
           hasChanges.value = false;
         } else {
@@ -369,54 +373,6 @@ function scheduleSave(sheet: any, row0: number) {
     hasChanges.value ? SAVE_DEBOUNCE_MS_DEFAULT : SAVE_DEBOUNCE_MS_MANUAL
   );
   timers.set(key, t);
-}
-
-async function saveChanges() {
-  if (!hasChanges.value) return;
-  showSaving.value = true;
-  try {
-    const api = univerAPI.value;
-    const workbook = api?.getActiveWorkbook?.();
-    if (!workbook) return;
-    const sheet = workbook?.getActiveSheet?.();
-    if (!sheet) return;
-
-    const selectedRows = getSelectedRows();
-    if (selectedRows.length === 0) {
-      toast.add({
-        title: "Нет выделенных строк для сохранения",
-        color: "warning",
-      });
-      return;
-    }
-
-    // можно батчем оптимизировать, но для простоты — по одному (upsert)
-    for (const row of selectedRows) {
-      const values = readRowValues(sheet, row);
-      if (isRowEmpty(values)) {
-        const idCell = String(values[COLUMN_COUNT - 1] ?? "").trim();
-        const hasId = Number(idCell) > 0;
-        if (!hasId) continue;
-      }
-
-      const listName = getName();
-      const dto: TransportAccountingUpdateDto = toDto(values, listName);
-      await sheetStore.upsertOne(dto as TransportAccountingSR);
-    }
-
-    toast.add({ title: "Данные успешно сохранены", color: "success" });
-    hasChanges.value = false;
-  } catch (e: any) {
-    const details = {
-      status: e?.status,
-      statusMessage: e?.statusMessage,
-      message: e?.message,
-      data: e?.data,
-    };
-    console.error("[record-update] error:", details);
-  } finally {
-    showSaving.value = false;
-  }
 }
 
 // ===== удаление строки =====
@@ -526,7 +482,7 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     ],
   });
 
-  univerAPI.value = api
+  univerAPI.value = api;
 
   const lc = api.addEvent(api.Event.LifeCycleChanged, (p: { stage: any }) => {
     if (p.stage === api.Enum.LifecycleStages.Rendered)
@@ -591,6 +547,15 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     sheets,
     resources: [],
   });
+
+  const onSelectionChange = (event: any) => {
+    const selection = event.selection;
+    if (selection && selection.range) {
+      currentEditingRow.value = selection.range.startRow;
+    }
+  };
+
+  api.getActiveWorkbook().onSelectionChange(onSelectionChange);
 
   const onExecuted = (cmd: any) => {
     try {
@@ -674,15 +639,107 @@ onMounted(async () => {
   console.log("Текущая роль", currentRoleCode);
 
   const { $wsOnMessage } = useNuxtApp();
-  
+
   if ($wsOnMessage) {
     // @ts-ignore
     $wsOnMessage((msg: SocketEvent) => {
-      const listName = getName(); // текущий активный лист
+      const listName = getName();
       sheetStore.applySocketMessage(msg, listName);
+
+      // Обработка создания новых записей
+      if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
+        const dto = msg.transportAccountingDTO[0];
+
+        // Используем текущую редактируемую строку, если она есть
+        if (currentEditingRow.value !== null) {
+          try {
+            const worksheet = univerAPI.value
+              .getActiveWorkbook()
+              .getActiveSheet();
+            worksheet
+              .getRange(currentEditingRow.value, COLUMN_COUNT - 1)
+              .setValue(dto.id);
+            console.log(
+              `[save] обновлен id в строке ${currentEditingRow.value} на ${dto.id}`
+            );
+
+            // Очищаем временные ID для этой строки
+            for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
+              if (rowIndex === currentEditingRow.value) {
+                tempIdToRowMap.value.delete(tempId);
+              }
+            }
+          } catch (error) {
+            console.error("Ошибка при обновлении ID:", error);
+          }
+        } else {
+          // Резервный механизм: поиск по временному ID
+          let targetRowIndex: number | null = null;
+
+          for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
+            try {
+              const worksheet = univerAPI.value
+                .getActiveWorkbook()
+                .getActiveSheet();
+              const rowValues = readRowValues(worksheet, rowIndex);
+              const rowDto = toDto(rowValues, listName);
+
+              if (isDtoMatch(rowDto, dto)) {
+                targetRowIndex = rowIndex;
+                tempIdToRowMap.value.delete(tempId);
+                break;
+              }
+            } catch (error) {
+              console.error("Ошибка при обработке строки:", error);
+            }
+          }
+
+          if (targetRowIndex !== null) {
+            try {
+              const worksheet = univerAPI.value
+                .getActiveWorkbook()
+                .getActiveSheet();
+              worksheet
+                .getRange(targetRowIndex, COLUMN_COUNT - 1)
+                .setValue(dto.id);
+              console.log(
+                `[save] обновлен id в строке ${targetRowIndex} на ${dto.id}`
+              );
+            } catch (error) {
+              console.error("Ошибка при обновлении ID:", error);
+            }
+          } else {
+            console.log(`[save] строка не нашлась по временному id ${dto.id}`);
+          }
+        }
+      }
     });
   }
 });
+
+// Вспомогательная функция для сравнения DTO
+function isDtoMatch(
+  dto1: Partial<TransportAccountingSR>,
+  dto2: Partial<TransportAccounting>
+): boolean {
+  // Сравниваем ключевые поля, исключая ID и технические поля
+  const fieldsToCompare: (keyof TransportAccountingSR)[] = [
+    "dateOfPickup",
+    "numberOfContainer",
+    "cargo",
+    "typeOfContainer",
+    "addressOfDelivery",
+    "client",
+    "contractor",
+    "driver",
+  ];
+
+  return fieldsToCompare.every((field) => {
+    const val1 = dto1[field] || "";
+    const val2 = dto2[field] || "";
+    return String(val1).trim() === String(val2).trim();
+  });
+}
 
 watch(
   () => sheetStore.records,
@@ -699,14 +756,12 @@ watch(
       .getActiveWorkbook()
       .getActiveSheet()
       .getSheet()
-      .getSnapshot()
-      .cellData;
+      .getSnapshot().cellData;
 
-    const sheet = wb.getActiveSheet()
-    console.log('[watch] sheetSnapshot', sheetSnapshot);
-    console.log('[watch] newRecords', newRecords);
+    const sheet = wb.getActiveSheet();
+    console.log("[watch] sheetSnapshot", sheetSnapshot);
+    console.log("[watch] newRecords", newRecords);
     console.log("[watch] обнаружены изменения в records");
-
   },
   { deep: true, immediate: false }
 );
@@ -715,6 +770,8 @@ onUnmounted(() => {
   if (disposeCmd?.dispose) disposeCmd.dispose();
   timers.forEach((t) => clearTimeout(t));
   timers.clear();
+  tempIdToRowMap.value.clear(); // Очищаем карту временных ID
+  currentEditingRow.value = null;
   window.removeEventListener("keydown", onKeydown);
 });
 </script>

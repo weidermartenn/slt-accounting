@@ -159,14 +159,15 @@ export const useSheetStore = defineStore("sheet", {
         if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
             const dto = msg.transportAccountingDTO[0] as TransportAccounting;
 
-            // Проверка на существование записи (чтобы не дублировать)
-            const idx = this.records[listName].findIndex((r) => r.id === dto.id);
-            if (idx !== -1) {
-            this.records[listName][idx] = dto;
-            console.log(`[socket] 🔄 обновлена запись id=${dto.id} в листе ${listName}`);
+            // Ищем запись с временным ID
+            const tempIdEntry = this.records[listName].findIndex(r => r.id < 0);
+            if (tempIdEntry !== -1) {
+              this.records[listName][tempIdEntry] = dto;
+              console.log(`[socket] 🔄 обновлена временная запись на id=${dto.id} в листе ${listName}`)
             } else {
-            this.records[listName].push(dto);
-            console.log(`[socket] 🟢 добавлена запись id=${dto.id} в листе ${listName}`);
+              // Добавляем как новую запись
+              this.records[listName].push(dto);
+              console.log(`[socket] 🟢 добавлена запись id=${dto.id} в листе ${listName}`);
             }
         }
 
