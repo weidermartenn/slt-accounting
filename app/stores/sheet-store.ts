@@ -20,6 +20,7 @@ export const useSheetStore = defineStore("sheet", {
     loading: false,
     error: "" as string | null,
     socketHandlers: [] as Array<(event: SocketEvent) => void>,
+    processedMessagesKeys: new Set() as Set<string>,
   }),
 
   getters: {
@@ -150,8 +151,24 @@ export const useSheetStore = defineStore("sheet", {
       };
     },
     applySocketMessage(msg: SocketEvent, listName: string) {
-        console.log("[applySocketMessage] сообщение", msg, "лист:", listName);
+        if (!this.processedMessagesKeys) {
+          this.processedMessagesKeys = new Set();
+        }
+        const messageKey = `${msg.type}-${msg.userId}-${JSON.stringify(msg.listToDel)}` || "";
 
+        if (this.processedMessagesKeys.has(messageKey)) {
+            console.log(`[applySocketMessage] сообщение ${messageKey} уже обработано, пропускаем...`);
+            return;
+        }
+
+        this.processedMessagesKeys.add(messageKey);
+
+        // через секунду удаляем
+        setTimeout(() => {
+          this.processedMessagesKeys.delete(messageKey);
+        }, 1000)
+
+        console.log("[applySocketMessage] сообщение", msg, "лист:", listName);
         if (!this.records[listName]) {
             this.records[listName] = [];
         }

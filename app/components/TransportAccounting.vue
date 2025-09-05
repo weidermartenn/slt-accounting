@@ -654,6 +654,7 @@ const initializeUniver = async (records: Record<string, any[]>) => {
   return lc;
 };
 
+let unsubscribeSocket: (() => void) | null = null;
 // ===== lifecycle =====
 onMounted(async () => {
   // инициализация Univer (загрузка либ + отрисовка)
@@ -676,7 +677,7 @@ onMounted(async () => {
 
   if ($wsOnMessage) {
     // @ts-ignore
-    $wsOnMessage((msg: SocketEvent) => {
+    unsubscribeSocket = $wsOnMessage((msg: SocketEvent) => {
       const listName = getName();
       sheetStore.applySocketMessage(msg, listName);
 
@@ -781,6 +782,8 @@ watch(
   (newRecords) => {
     if (!univerAPI.value) return;
 
+    if (JSON.stringify(newRecords) === JSON.stringify(lastRecords)) return;
+
     const api = univerAPI.value;
     const wb = api.getActiveWorkbook();
     if (!wb) return;
@@ -815,9 +818,6 @@ watch(
       if (rowIndex >= 0) {
         patchRowValuesExceptProtected(sheet, rowIndex, dto);
       } else {
-        // Если вдруг строка не нашлась — (крайний случай)
-        // можно найти первую пустую строку и вставить (опционально).
-        // Либо логировать:
         console.warn(`[watch] строка с id=${dto.id} не найдена`);
       }
     }
@@ -839,22 +839,12 @@ watch(
     }
 
     lastRecords[activeListName] = JSON.parse(JSON.stringify(newItems));
-
-    // const sheetSnapshot = univerAPI.value
-    //   .getActiveWorkbook()
-    //   .getActiveSheet()
-    //   .getSheet()
-    //   .getSnapshot().cellData;
-
-    // const sheet = wb.getActiveSheet();
-    // console.log("[watch] sheetSnapshot", sheetSnapshot);
-    // console.log("[watch] newRecords", newRecords);
-    // console.log("[watch] обнаружены изменения в records");
   },
   { deep: true, immediate: false }
 );
 
 onUnmounted(() => {
+  if (unsubscribeSocket) unsubscribeSocket();
   if (disposeCmd?.dispose) disposeCmd.dispose();
   timers.forEach((t) => clearTimeout(t));
   timers.clear();

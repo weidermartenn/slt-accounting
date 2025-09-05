@@ -2,7 +2,7 @@
   <UApp>
     <div v-cloak>
       <ClientOnly>
-        <TransportAccountingUser 
+        <TransportAccounting
           v-if="Object.keys(records ||{}).length"
           :records="records" 
         />
@@ -26,7 +26,7 @@ definePageMeta({
 });
 
 useHead({
-  title: "ТУ - таблица",
+  title: "СЛТ Транспортный учет",
   meta: [
     {
       name: "description",
@@ -36,7 +36,7 @@ useHead({
 });
 
 import { useDebounceFn } from "@vueuse/core";
-import TransportAccountingUser from "~/components/TransportAccountingUser.vue";
+import TransportAccounting from "~/components/TransportAccounting.vue"
 import { useSheetStore } from "~/stores/sheet-store";
 
 const store = useSheetStore();

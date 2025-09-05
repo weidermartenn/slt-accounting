@@ -32,6 +32,12 @@ export const STYLES: Record<string, IStyleData> = {
   },
   idcol: {
     cl: { rgb: "#FFFFFF" },
+    bd: {
+      l: { s: 1, cl: { rgb: "#000000" } },
+      t: { s: 1, cl: { rgb: "#FFFFFF" } },
+      b: { s: 1, cl: { rgb: "#FFFFFF" } },
+      r: { s: 1, cl: { rgb: "#FFFFFF" } },
+    }
   },
   lockedCol: {
     bg: { rgb: "#DDDDDD" },
