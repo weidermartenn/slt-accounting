@@ -121,6 +121,9 @@ let disposeCmd: any;
 let currentRoleCode = "";
 const timers = new Map<string, number>();
 const currentEditingRow = ref<number | null>(null);
+const socketPatchRows = new Set<number>();
+
+const SKIP_COLS = new Set<number>([4, 25, 26]);
 
 const deleteState = reactive<{
   pending: boolean;
@@ -306,6 +309,36 @@ function getIdsFromRows(sheet: any, rows: number[]): number[] {
     if (id > 0) ids.push(id);
   }
   return ids;
+}
+
+function findRowById(sheet: any, id: number): number {
+  const rowCount = sheet.getSheet()._snapshot.rowCount;
+  console.log('[findRowById] rowCount', rowCount);
+  const idColA1 = colLetter(COLUMN_COUNT);
+  console.log('[findRowById] idColA1', idColA1);
+  for (let r1 = 1; r1 <= rowCount; r1++) {
+    const cell = sheet.getRange(`${idColA1}${r1}`).getValue();
+    if (Number(cell) === id) return r1 - 1;
+  }
+  return -1
+}
+
+function patchRowValuesExceptProtected(sheet: any, rowIndex: number, dto: TransportAccounting) {
+  // запоминаем эту строку для патча чтобы подавить scheduleSave
+  socketPatchRows.add(rowIndex);
+  try {
+    for (let c = 0; c < COLUMN_COUNT; c++) {
+      if (SKIP_COLS.has(c)) continue;
+      const key = COL2FIELD[c];
+      if (!key) continue;
+      const v = (dto as any)[key] ?? "";
+      sheet.getRange(rowIndex, c).setValue(v);
+    }
+
+    sheet.getRange(rowIndex, COLUMN_COUNT - 1).setValue(dto.id);
+  } finally {
+    queueMicrotask(() => socketPatchRows.delete(rowIndex))
+  }
 }
 
 const tempIdToRowMap = ref(new Map<number, number>()); // tmepId -> rowIndex
@@ -582,6 +615,7 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       let r1 = rng.endRow ?? p.row ?? p.endRow ?? r0;
 
       for (let row0 = r0; row0 <= r1; row0++) {
+        if (socketPatchRows.has(row0)) continue;
         if (row0 !== 0) scheduleSave(sheet, row0);
       }
     } catch {}
@@ -741,6 +775,7 @@ function isDtoMatch(
   });
 }
 
+let lastRecords: Record<string, TransportAccounting[]> = {};
 watch(
   () => sheetStore.records,
   (newRecords) => {
@@ -751,17 +786,70 @@ watch(
     if (!wb) return;
 
     const activeListName = getName();
+    const newItems = newRecords[activeListName] || [];
+    const oldItems = lastRecords[activeListName] || [];
 
-    const sheetSnapshot = univerAPI.value
-      .getActiveWorkbook()
-      .getActiveSheet()
-      .getSheet()
-      .getSnapshot().cellData;
+    console.log('[watch] newItems', newItems);
+    
+    if (!oldItems.length && newItems.length) {
+      lastRecords[activeListName] = JSON.parse(JSON.stringify(newItems));
+      return;
+    }
+
+    console.log('[watch] oldItems after if', oldItems);
 
     const sheet = wb.getActiveSheet();
-    console.log("[watch] sheetSnapshot", sheetSnapshot);
-    console.log("[watch] newRecords", newRecords);
-    console.log("[watch] обнаружены изменения в records");
+    if (!sheet) return;
+
+    // нахождение реально обновленных записей
+    const updatedRecords = newItems.filter((n) => {
+      const old = oldItems.find((o) => o.id === n.id);
+      return old && JSON.stringify(old) !== JSON.stringify(n);
+    })
+    
+    console.log('[watch] updatedRecords', updatedRecords);
+
+    for (const dto of updatedRecords) {
+      const rowIndex = findRowById(sheet, dto.id);
+      console.log('[watch] rowIndex', rowIndex);
+      if (rowIndex >= 0) {
+        patchRowValuesExceptProtected(sheet, rowIndex, dto);
+      } else {
+        // Если вдруг строка не нашлась — (крайний случай)
+        // можно найти первую пустую строку и вставить (опционально).
+        // Либо логировать:
+        console.warn(`[watch] строка с id=${dto.id} не найдена`);
+      }
+    }
+
+    const createdRecords = newItems.filter((n) => !oldItems.some((o) => o.id === n.id));
+    for (const dto of createdRecords) {
+      const rowIndex = findRowById(sheet, dto.id);
+      if (rowIndex >= 0) {
+        patchRowValuesExceptProtected(sheet, rowIndex, dto);
+      } else {
+        console.warn(`[watch] строка с id=${dto.id} не найдена`);
+      }
+    }
+
+    const deletedRecords = oldItems.filter((o) => !newItems.some((n) => n.id === o.id));
+    for (const dto of deletedRecords) {
+      const rowIndex = findRowById(sheet, dto.id);
+      if (rowIndex >= 0) sheet.deleteRows(rowIndex, 1);
+    }
+
+    lastRecords[activeListName] = JSON.parse(JSON.stringify(newItems));
+
+    // const sheetSnapshot = univerAPI.value
+    //   .getActiveWorkbook()
+    //   .getActiveSheet()
+    //   .getSheet()
+    //   .getSnapshot().cellData;
+
+    // const sheet = wb.getActiveSheet();
+    // console.log("[watch] sheetSnapshot", sheetSnapshot);
+    // console.log("[watch] newRecords", newRecords);
+    // console.log("[watch] обнаружены изменения в records");
   },
   { deep: true, immediate: false }
 );
