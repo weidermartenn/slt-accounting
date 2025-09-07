@@ -46,11 +46,11 @@ export default defineNuxtPlugin(async (nuxtApp) => {
         console.log('[socket] получено сообщение', ev.data)
         try {
           const payload = JSON.parse(ev.data);
-          console.log('[socket] разобранное сообщение', {
-            type: payload.type, 
-            userId: payload.userId,
-            data: payload.TransportAccountingDto || payload.listToDel
-          })
+          // console.log('[socket] разобранное сообщение', {
+          //   type: payload.type, 
+          //   userId: payload.userId,
+          //   data: payload.TransportAccountingDto || payload.listToDel
+          // })
           
           listeners.forEach(fn => fn(payload))
         } catch (error) {

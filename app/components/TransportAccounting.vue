@@ -2,7 +2,7 @@
   <div class="relative" style="width: 100%; height: 90vh">
     <!-- Оверлей-лоадер -->
     <div
-      v-if="showFallback"
+      v-show="showFallback"
       class="absolute inset-0 flex items-center justify-center bg-white/90 z-10"
     >
       <div class="text-center">
@@ -13,7 +13,7 @@
 
     <!-- Индикатор сохранения -->
     <div
-      v-if="showSaving"
+      v-show="showSaving"
       class="absolute left-1/2 -translate-x-1/2 -top-13 z-50 flex items-center text-zinc-900 rounded-sm px-4 py-2 shadow"
     >
       <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
@@ -791,15 +791,11 @@ watch(
     const activeListName = getName();
     const newItems = newRecords[activeListName] || [];
     const oldItems = lastRecords[activeListName] || [];
-
-    console.log('[watch] newItems', newItems);
     
     if (!oldItems.length && newItems.length) {
       lastRecords[activeListName] = JSON.parse(JSON.stringify(newItems));
       return;
     }
-
-    console.log('[watch] oldItems after if', oldItems);
 
     const sheet = wb.getActiveSheet();
     if (!sheet) return;

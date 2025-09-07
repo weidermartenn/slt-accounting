@@ -151,10 +151,11 @@ export const useSheetStore = defineStore("sheet", {
       };
     },
     applySocketMessage(msg: SocketEvent, listName: string) {
+        let keyAdditonalIndex = 1;
         if (!this.processedMessagesKeys) {
           this.processedMessagesKeys = new Set();
         }
-        const messageKey = `${msg.type}-${msg.userId}-${JSON.stringify(msg.listToDel)}` || "";
+        const messageKey = `${msg.type}-${msg.userId}-${JSON.stringify(msg.listToDel)}-${keyAdditonalIndex++}` || "";
 
         if (this.processedMessagesKeys.has(messageKey)) {
             console.log(`[applySocketMessage] сообщение ${messageKey} уже обработано, пропускаем...`);
@@ -162,6 +163,8 @@ export const useSheetStore = defineStore("sheet", {
         }
 
         this.processedMessagesKeys.add(messageKey);
+
+        console.log('[applySocketMessage] ключи обработанных сообщений', this.processedMessagesKeys);
 
         // через секунду удаляем
         setTimeout(() => {
