@@ -1,3 +1,8 @@
+// simple logger toggle (not replacing existing logs yet)
+const DEBUG = false;
+function dbg(...args: any[]) {
+  if (DEBUG) console.log(...args);
+}
 <template>
   <div class="relative" style="width: 100%; height: 90vh">
     <!-- Оверлей-лоадер -->
@@ -71,11 +76,7 @@ import {
 } from "~/utils/univer-protect";
 import type { RoleCode } from "~/utils/roles";
 import { useSheetStore } from "~/stores/sheet-store";
-import { ArrangeTypeEnum, get } from "@univerjs/presets";
-import {
-  convertPositionCellToSheetOverGrid,
-  degToRad,
-} from "@univerjs/preset-sheets-core";
+// removed unused: ArrangeTypeEnum, get, convertPositionCellToSheetOverGrid, degToRad
 
 const toast = useToast();
 const sheetStore = useSheetStore();
@@ -110,6 +111,9 @@ async function ensureUniverLoaded() {
 const hasChanges = ref(false);
 const COLUMN_COUNT = HEADERS.length;
 const LOCKED_COLS = ref<number[]>([]);
+// ID column helpers to avoid magic numbers
+const ID_COL_INDEX = COLUMN_COUNT - 1;
+const ID_COL_A1 = colLetter(COLUMN_COUNT);
 const SAVE_DEBOUNCE_MS_DEFAULT = 100;
 const SAVE_DEBOUNCE_MS_MANUAL = 30000;
 const SAVING_MIN_VISIBLE_MS = 800;
@@ -296,7 +300,7 @@ function toDto(values: any[], listName: string): TransportAccountingSR {
 }
 
 function getIdFromCell(sheet: any, row0: number): number {
-  const a1 = `${colLetter(COLUMN_COUNT)}${row0 + 1}`;
+  const a1 = `${ID_COL_A1}${row0 + 1}`;
   const v = sheet.getRange?.(a1)?.getValues?.()?.[0]?.[0];
   const n = Number(String(v ?? "").trim());
   return Number.isFinite(n) ? n : 0; // сохраняем временные ID (могут быть отрицательными или положительными)
@@ -313,14 +317,14 @@ function getIdsFromRows(sheet: any, rows: number[]): number[] {
 
 function findRowById(sheet: any, id: number): number {
   const rowCount = sheet.getSheet()._snapshot.rowCount;
-  console.log('[findRowById] rowCount', rowCount);
-  const idColA1 = colLetter(COLUMN_COUNT);
-  console.log('[findRowById] idColA1', idColA1);
+  // batch-read the whole ID column to minimize API calls
+  const rangeA1 = `${ID_COL_A1}1:${ID_COL_A1}${rowCount}`;
+  const values2d: any[][] = sheet.getRange?.(rangeA1)?.getValues?.() || [];
   for (let r1 = 1; r1 <= rowCount; r1++) {
-    const cell = sheet.getRange(`${idColA1}${r1}`).getValue();
-    if (Number(cell) === id) return r1 - 1;
+    const v = values2d[r1 - 1]?.[0];
+    if (Number(v) === id) return r1 - 1;
   }
-  return -1
+  return -1;
 }
 
 function patchRowValuesExceptProtected(sheet: any, rowIndex: number, dto: TransportAccounting) {
@@ -884,7 +888,7 @@ onMounted(async () => {
 // Вспомогательная функция для сравнения DTO
 function isDtoMatch(
   dto1: Partial<TransportAccountingSR>,
-  dto2: Partial<TransportAccounting>
+  dto2: Partial<TransportAccountingSR>
 ): boolean {
   // Сравниваем ключевые поля, исключая ID и технические поля
   const fieldsToCompare: (keyof TransportAccountingSR)[] = [
