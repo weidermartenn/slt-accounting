@@ -27,15 +27,15 @@ function dbg(...args: any[]) {
 
     <!-- Кнопки управления -->
     <div class="absolute right-5 -top-12 z-50 flex gap-2">
-      <!-- <UButton
-        :disabled="!hasChanges"
-        @click="saveChanges"
+      <UButton
+        :disabled="pending.rows.size === 0"
+        @click="onSavePasted"
         color="warning"
         variant="soft"
         icon="i-lucide-save"
       >
-        Сохранить запись
-      </UButton> -->
+        Сохранить изменения ({{ pending.rows.size }})
+      </UButton>
       <UButton
         :color="deleteState.pending ? 'error' : 'secondary'"
         :variant="deleteState.pending ? 'solid' : 'soft'"
@@ -81,6 +81,10 @@ import { useSheetStore } from "~/stores/sheet-store";
 const toast = useToast();
 const sheetStore = useSheetStore();
 
+// Pending rows to save and highlight support
+const pending = reactive<{ rows: Set<number> }>({ rows: new Set<number>() });
+let lastHighlightedRows: number[] = [];
+
 // ===== univer dynamic modules (загружаем один раз) =====
 let UniverSheetsCorePreset: any;
 let UniverPresetSheetsCoreRuRU: any;
@@ -105,6 +109,123 @@ async function ensureUniverLoaded() {
     "@univerjs/presets"
   ));
   libsLoaded = true;
+}
+
+// Highlight pending rows and update pending set
+function applyPendingRows(rows: number[]) {
+  console.log('applyPendingRows called with:', rows);
+  console.log('Current pending.rows size before:', pending.rows.size);
+  
+  try {
+    const wb = univerAPI.value?.getActiveWorkbook?.();
+    const sheet = wb?.getActiveSheet().getSheet();
+    if (!wb || !sheet) {
+      console.warn('No workbook or sheet available');
+      return;
+    }
+    const snap = sheet.getSnapshot();
+    if (!snap.cellData) {
+      console.warn('No snapshot cellData available');
+      return;
+    }
+
+    // clear old highlight
+    for (const r of lastHighlightedRows) {
+      const rowData = snap.cellData[r];
+      if (!rowData) continue;
+      for (let c = 0; c < COLUMN_COUNT; c++) {
+        if (rowData[c]?.s === 'conditionallyFilled') {
+          delete rowData[c].s;
+        }
+      }
+    }
+
+    // set new
+    pending.rows.clear();
+    const newRows: number[] = [];
+    for (const rr of rows) {
+      if (rr > 0) { // skip header
+        pending.rows.add(rr);
+        newRows.push(rr);
+        console.log('Added row to pending:', rr);
+      }
+    }
+    
+    console.log('New pending.rows size:', pending.rows.size);
+    console.log('Rows to highlight:', newRows);
+    
+    for (const r of newRows) {
+      const rowData = snap.cellData[r];
+      if (!rowData) {
+        console.warn('Row not found in snapshot:', r);
+        continue;
+      }
+      for (let c = 0; c < COLUMN_COUNT; c++) {
+        if (!rowData[c]) rowData[c] = { v: '', s: 'conditionallyFilled' };
+        else rowData[c].s = 'conditionallyFilled';
+      }
+    }
+    lastHighlightedRows = newRows;
+
+    if (typeof sheet.setSnapshot === 'function') {
+      sheet.setSnapshot(snap);
+      console.log('Snapshot updated via setSnapshot');
+    } else if (typeof wb.applySnapshot === 'function' && typeof wb.getSnapshot === 'function') {
+      wb.applySnapshot(wb.getSnapshot());
+      console.log('Snapshot updated via applySnapshot');
+    }
+  } catch (e) {
+    console.warn('applyPendingRows failed', e);
+  }
+}
+
+// Save via button
+async function onSavePasted() {
+  const api = univerAPI.value;
+  const wb = api?.getActiveWorkbook?.();
+  const sheet = wb?.getActiveSheet?.();
+  if (!sheet) return;
+  const rows = Array.from(pending.rows).sort((a, b) => a - b);
+  await saveRowsBulk(sheet, rows);
+}
+
+async function saveRowsBulk(sheet: any, rows: number[]) {
+  if (!rows || rows.length === 0) return;
+  const listName = getName();
+  const addList: any[] = [];
+  const updList: any[] = [];
+  for (const row0 of rows) {
+    if (row0 === 0) continue;
+    if (socketPatchRows.has(row0)) continue;
+    if (currentRoleCode !== 'ROLE_ADMIN' && currentRoleCode !== 'ROLE_BUH' && LOCKED_ROWS.has(row0)) continue;
+    const values = readRowValues(sheet, row0);
+    const dto = toDto(values, listName);
+    if (Number(dto?.id) > 0) {
+      updList.push({ ...dto, listName });
+    } else {
+      // assign temp ID to map this local row to server-created record
+      const existingId = sheet.getRange(row0, COLUMN_COUNT - 1)?.getValue?.();
+      let tmp = Number(existingId);
+      if (!Number.isFinite(tmp) || tmp === 0) {
+        const tempId = createTempId();
+        setCellSilently(sheet, row0, COLUMN_COUNT - 1, tempId);
+        tempIdToRowMap.value.set(tempId, row0);
+      } else {
+        tempIdToRowMap.value.set(tmp, row0);
+      }
+      addList.push(dto);
+    }
+  }
+  try {
+    if (addList.length) await sheetStore.addMany(addList);
+    if (updList.length) await sheetStore.updateMany(updList as TransportAccountingUpdateDto[]);
+    await applyEditableRules(univerAPI.value, currentRoleCode as RoleCode);
+    applyPendingRows([]); // clear
+    toast.add({ title: `Сохранено: добавлено ${addList.length}, обновлено ${updList.length}`, color: 'success', icon: 'i-lucide-check' });
+  } catch (e) {
+    console.error(e);
+    toast.add({ title: 'Не удалось сохранить изменения', color: 'error' });
+  }
 }
 
 // ===== state / consts =====
@@ -296,11 +417,26 @@ function toDto(values: any[], listName: string): TransportAccountingSR {
 
   for (const k in draft) {
     const v = draft[k as keyof TransportAccountingSR];
-    draft[k as keyof TransportAccountingSR] = (
-      v == null ? "" : String(v).replace(/\r?\n/g, "").trim()
-    ) as never;
+    if (k === 'id') {
+      draft[k as keyof TransportAccountingSR] = (Number(v) || 0) as never;
+    } else if (k === 'dateOfPickup' || k === 'dateOfSubmission' || k === 'dateOfBill' || k === 'datePayment' || k === 'dateOfPaymentContractor') {
+      // Handle Excel serial date numbers
+      if (typeof v === 'number' && v > 40000) {
+        // Convert Excel serial date to YYYY-MM-DD format
+        const excelEpoch = new Date(1900, 0, 1);
+        const date = new Date(excelEpoch.getTime() + (v - 2) * 24 * 60 * 60 * 1000);
+        draft[k as keyof TransportAccountingSR] = date.toISOString().split('T')[0] as never;
+      } else {
+        draft[k as keyof TransportAccountingSR] = (
+          v == null ? "" : String(v).replace(/\r?\n/g, "").trim()
+        ) as never;
+      }
+    } else {
+      draft[k as keyof TransportAccountingSR] = (
+        v == null ? "" : String(v).replace(/\r?\n/g, "").trim()
+      ) as never;
+    }
   }
-  draft.id = Number(draft.id) || 0;
   return draft as TransportAccountingSR;
 }
 
@@ -689,13 +825,67 @@ const initializeUniver = async (records: Record<string, any[]>) => {
   });
 
   const onSelectionChange = (event: any) => {
-    const selection = event.selection;
-    if (selection && selection.range) {
-      currentEditingRow.value = selection.range.startRow;
-    }
+    try {
+      const selection = event?.selection;
+      if (!selection) return;
+      currentEditingRow.value = selection.range?.startRow ?? currentEditingRow.value;
+      const ranges = (selection.ranges as any[]) || (selection.range ? [selection.range] : []);
+      const rowSet = new Set<number>();
+      for (const r of ranges) {
+        const sr = typeof r?.startRow === 'number' ? r.startRow : 0;
+        const er = typeof r?.endRow === 'number' ? r.endRow : sr;
+        for (let rr = sr; rr <= er; rr++) rowSet.add(rr);
+      }
+      if (rowSet.has(0)) rowSet.delete(0);
+      applyPendingRows(Array.from(rowSet));
+    } catch {}
   };
 
   api.getActiveWorkbook().onSelectionChange(onSelectionChange);
+
+  // Add ClipboardPasted event handler
+  api.addEvent(api.Event.ClipboardPasted, (params: any) => {
+    try {
+      console.log('ClipboardPasted event:', params);
+      
+      // Parse the pasted text to determine number of rows
+      const { text } = params;
+      if (!text) return;
+      
+      const lines = text.split('\n').filter((line: string) => line.trim() !== '');
+      console.log('Pasted lines count:', lines.length);
+      
+      // Get current selection starting position
+      const wb = api.getActiveWorkbook();
+      const sheet = wb?.getActiveSheet();
+      if (!sheet) return;
+      
+      const selection = sheet.getSelection();
+      const activeRange = selection?.getActiveRange?.() || selection?.range;
+      const startRow = activeRange?.startRow ?? 1;
+      
+      console.log('Paste starting at row:', startRow);
+      
+      // Calculate affected rows based on paste start position and content
+      const rowSet = new Set<number>();
+      for (let i = 0; i < lines.length; i++) {
+        const rowIndex = startRow + i;
+        if (rowIndex > 0) { // exclude header row 0
+          rowSet.add(rowIndex);
+        }
+      }
+      
+      if (rowSet.size > 0) {
+        console.log('Pasted rows detected:', Array.from(rowSet));
+        // Delay to ensure paste operation is complete
+        setTimeout(() => {
+          applyPendingRows(Array.from(rowSet));
+        }, 100);
+      }
+    } catch (e) {
+      console.warn('ClipboardPasted handler error:', e);
+    }
+  });
 
   const onExecuted = (cmd: any) => {
     try {
@@ -799,7 +989,6 @@ onMounted(async () => {
 
       // Обработка создания новых записей
       if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
-        const dto = msg.transportAccountingDTO[0];
         const worksheet = univerAPI.value?.getActiveWorkbook()?.getActiveSheet();
         
         if (!worksheet) {
@@ -807,69 +996,117 @@ onMounted(async () => {
           return;
         }
 
-        let targetRowIndex: number | null = null;
-        let foundByTempId = false;
+        // Обрабатываем все записи в массиве
+        for (const dto of msg.transportAccountingDTO) {
+          let targetRowIndex: number | null = null;
+          let foundByTempId = false;
 
-        // 1. Проверяем, есть ли уже строка с этим ID
-        const existingRowIndex = findRowById(worksheet, dto.id);
-        if (existingRowIndex >= 0) {
-          console.log(`[socket] строка с ID ${dto.id} уже существует на строке ${existingRowIndex}, пропускаем`);
-          return;
-        }
+          // 1. Проверяем, есть ли уже строка с этим ID
+          const existingRowIndex = findRowById(worksheet, dto.id);
+          if (existingRowIndex >= 0) {
+            console.log(`[socket] строка с ID ${dto.id} уже существует на строке ${existingRowIndex}, пропускаем`);
+            continue;
+          }
 
-        // 2. Ищем по карте временных ID (для клиента-создателя)
-        for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
-          // Доверяем маппингу и берем первую подходящую строку
-          targetRowIndex = rowIndex;
-          tempIdToRowMap.value.delete(tempId);
-          foundByTempId = true;
-          console.log(`[socket] выбрана строка ${rowIndex} по маппингу временного ID ${tempId}`);
-          break;
-        }
+          // 2. Сначала пытаемся сопоставить с ЛОКАЛЬНЫМИ pending строками по содержимому
+          if (pending.rows.size > 0) {
+            const listNameLocal = getName();
+            for (const r of Array.from(pending.rows).sort((a,b)=>a-b)) {
+              try {
+                const vals = readRowValues(worksheet, r);
+                const localDto = toDto(vals, listNameLocal);
+                if (isDtoMatch(localDto, dto)) {
+                  targetRowIndex = r;
+                  console.log(`[socket] совпадение по содержимому найдено для ID ${dto.id} в строке ${r}`);
+                  break;
+                }
+              } catch {}
+            }
+          }
 
-        // 3. Если не нашли по временным ID, ищем пустую строку
-        if (targetRowIndex === null) {
-          const rowCount = worksheet.getSheet()._snapshot.rowCount;
-          console.log(`[socket] ищем пустую строку среди ${rowCount} строк`);
-          
-          for (let r = 1; r < rowCount; r++) {
-            try {
-              const currentId = getIdFromCell(worksheet, r);
-              const rowValues = readRowValues(worksheet, r);
-              
-              // Проверяем: нет ID и строка пустая
-              if ((!currentId || currentId === 0) && isRowEmpty(rowValues)) {
-                targetRowIndex = r;
-                console.log(`[socket] найдена пустая строка ${r}`);
-                break;
+          // 2.1 Если совпадения по содержимому нет, но есть pending строки — берем ближайшую (с наименьшим индексом)
+          if (targetRowIndex === null && pending.rows.size > 0) {
+            targetRowIndex = Math.min(...Array.from(pending.rows));
+            console.log(`[socket] используем ближайшую pending-строку ${targetRowIndex} для ID ${dto.id}`);
+          }
+
+          // 2.2 (опционально) Если всё ещё не нашли и есть tempId маппинг (редкий случай), используем его
+          if (targetRowIndex === null) {
+            for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
+              targetRowIndex = rowIndex;
+              tempIdToRowMap.value.delete(tempId);
+              foundByTempId = true;
+              console.log(`[socket] выбрана строка ${rowIndex} по маппингу временного ID ${tempId}`);
+              break;
+            }
+          }
+
+          // 3. Если не нашли ни среди pending, ни по tempId — ищем пустую строку
+          if (targetRowIndex === null) {
+            const rowCount = worksheet.getSheet()._snapshot.rowCount;
+            console.log(`[socket] ищем пустую строку среди ${rowCount} строк для ID ${dto.id}`);
+            
+            for (let r = 1; r < rowCount; r++) {
+              try {
+                const currentId = getIdFromCell(worksheet, r);
+                const rowValues = readRowValues(worksheet, r);
+                
+                // Проверяем: нет ID и строка пустая
+                if ((!currentId || currentId === 0) && isRowEmpty(rowValues)) {
+                  targetRowIndex = r;
+                  console.log(`[socket] найдена пустая строка ${r} для ID ${dto.id}`);
+                  break;
+                }
+              } catch (error) {
+                console.error(`Ошибка при проверке строки ${r}:`, error);
               }
-            } catch (error) {
-              console.error(`Ошибка при проверке строки ${r}:`, error);
             }
+          }
+
+          // 4. Обновляем строку
+          if (targetRowIndex !== null) {
+            try {
+              // Если строка относилась к локально вставленным (pending), сначала очищаем её
+              const shouldClear = pending.rows.has(targetRowIndex);
+              if (shouldClear) {
+                console.log(`[socket] очищаем локально вставленную строку ${targetRowIndex} перед применением серверных данных`);
+                for (let c = 0; c < COLUMN_COUNT; c++) {
+                  worksheet.getRange(targetRowIndex, c).setValue("");
+                }
+                pending.rows.delete(targetRowIndex);
+                creatingRows.delete(targetRowIndex);
+              }
+
+              // Применяем серверные данные
+              patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
+              worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
+              console.log(`[socket] строка ${targetRowIndex} заполнена данными ID ${dto.id}`);
+            } catch (error) {
+              console.error("Ошибка при обновлении строки:", error);
+            }
+          } else {
+            console.log(`[socket] не найдена подходящая строка для записи ID ${dto.id}`);
           }
         }
-
-        // 4. Обновляем строку
-        if (targetRowIndex !== null) {
-          try {
-            if (foundByTempId) {
-              // Клиент-создатель: не очищаем вручную (это триггерит повторный save),
-              // а используем патч, который подавляет scheduleSave для этой строки
-              patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
-              worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
-              console.log(`[socket] обновлена локальная строка ${targetRowIndex} данными с ID ${dto.id}`);
-              creatingRows.delete(targetRowIndex);
-            } else {
-              // Другие клиенты: заполняем всю строку
-              patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
-              worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
-              console.log(`[socket] создана новая строка ${targetRowIndex} с ID ${dto.id}`);
-            }
-          } catch (error) {
-            console.error("Ошибка при обновлении строки:", error);
-          }
-        } else {
-          console.log(`[socket] не найдена подходящая строка для записи ID ${dto.id}`);
+        
+        // После обработки всех записей: если остались pending-строки (значит сервер их не подтвердил)
+        // очищаем их из таблицы и сбрасываем подсветку
+        if (msg.transportAccountingDTO.length > 0) {
+          setTimeout(() => {
+            try {
+              if (pending.rows.size > 0) {
+                const wb = univerAPI.value?.getActiveWorkbook?.();
+                const sheet = wb?.getActiveSheet?.();
+                if (sheet) {
+                  for (const r of Array.from(pending.rows)) {
+                    for (let c = 0; c < COLUMN_COUNT; c++) sheet.getRange(r, c).setValue("");
+                  }
+                }
+                pending.rows.clear();
+              }
+            } catch {}
+            applyPendingRows([]);
+          }, 200);
         }
       }
 
@@ -956,9 +1193,18 @@ function isDtoMatch(
   dto1: Partial<TransportAccountingSR>,
   dto2: Partial<TransportAccountingSR>
 ): boolean {
-  // Сравниваем ключевые поля, исключая ID и технические поля
+  // Нормализатор значений: обрезать пробелы, привести числа с запятой, игнорировать регистр
+  const norm = (v: any) => {
+    if (v == null) return "";
+    if (typeof v === 'number') return String(v);
+    const s = String(v).replace(/\r?\n/g, "").trim();
+    // заменить запятые на точки в числах
+    if (/^\d+[\.,]\d+$/.test(s)) return s.replace(',', '.');
+    return s.toLowerCase();
+  };
+
+  // Сравниваем только недатированные ключи (даты могут быть в Excel serial и не совпадут)
   const fieldsToCompare: (keyof TransportAccountingSR)[] = [
-    "dateOfPickup",
     "numberOfContainer",
     "cargo",
     "typeOfContainer",
@@ -966,13 +1212,10 @@ function isDtoMatch(
     "client",
     "contractor",
     "driver",
+    "formPayAs",
   ];
 
-  return fieldsToCompare.every((field) => {
-    const val1 = dto1[field] || "";
-    const val2 = dto2[field] || "";
-    return String(val1).trim() === String(val2).trim();
-  });
+  return fieldsToCompare.every((field) => norm(dto1[field]) === norm(dto2[field]));
 }
 
 let lastRecords: Record<string, TransportAccounting[]> = {};
