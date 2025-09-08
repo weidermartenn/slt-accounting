@@ -664,7 +664,21 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     };
   }
 
-  const order = Object.keys(sheets);
+  // Сортировка листов по названию периода MM.YYYY по возрастанию
+  const parsePeriod = (name: string): number => {
+    // expects "MM.YYYY"
+    const m = /^([01]?\d)\.(\d{4})$/.exec(String(name).trim());
+    if (!m) return Number.MAX_SAFE_INTEGER;
+    const mm = Number(m[1]);
+    const yyyy = Number(m[2]);
+    return yyyy * 100 + mm; // sortable numeric key
+  };
+  const order = Object.keys(sheets).sort((a, b) => {
+    const na = sheets[a]?.name ?? "";
+    const nb = sheets[b]?.name ?? "";
+    return parsePeriod(na) - parsePeriod(nb);
+  });
+
   univerAPI.value.createWorkbook({
     id: "workbook-1",
     sheetOrder: order,
