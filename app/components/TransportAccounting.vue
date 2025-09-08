@@ -128,6 +128,7 @@ const currentEditingRow = ref<number | null>(null);
 const socketPatchRows = new Set<number>();
 
 const SKIP_COLS = new Set<number>([4, 25, 26]);
+const LOCKED_ROWS = new Set<number>(); // rows locked by managerBlock for current sheet
 
 const deleteState = reactive<{
   pending: boolean;
@@ -166,7 +167,11 @@ function buildRowCells(rec: TransportAccounting) {
   const cell = (v: any, col: number) =>
     ({
       v: v ?? "",
-      s: LOCKED_COLS.value.includes(col) ? "lockedCol" : "allrows",
+      s: LOCKED_COLS.value.includes(col)
+        ? "lockedCol"
+        : rec?.managerBlock && currentRoleCode !== "ROLE_ADMIN" && currentRoleCode !== "ROLE_BUH"
+        ? "lockedRow"
+        : "allrows",
     } as { v: any; s: string });
 
   const row: Record<number, { v: any; s: string }> = {};
@@ -340,8 +345,41 @@ function patchRowValuesExceptProtected(sheet: any, rowIndex: number, dto: Transp
     }
 
     sheet.getRange(rowIndex, COLUMN_COUNT - 1).setValue(dto.id);
+
+    // Визуальная блокировка строки, если managerBlock=true и роль не ADMIN/BUH
+    if (dto?.managerBlock && currentRoleCode !== "ROLE_ADMIN" && currentRoleCode !== "ROLE_BUH") {
+      LOCKED_ROWS.add(rowIndex);
+      applyLockedRowVisual(sheet, rowIndex);
+    }
   } finally {
     queueMicrotask(() => socketPatchRows.delete(rowIndex))
+  }
+}
+
+// Применить серую заливку "lockedRow" ко всей строке через снапшот (совместимо с Univer API)
+function applyLockedRowVisual(sheet: any, rowIndex: number) {
+  try {
+    const wb = univerAPI.value?.getActiveWorkbook?.();
+    if (!wb || !sheet) return;
+    const s = wb.getSheetBySheetId?.(sheet.getSheetId?.()) || sheet;
+    const snap = s.getSnapshot?.() ?? s.getModel?.() ?? null;
+    if (!snap?.data?.rows?._) return;
+    const ri = rowIndex + 1; // snapshot rows start at 0 with header at index 0
+    const row = snap.data.rows._[ri];
+    if (!row) return;
+    row.cells ||= {};
+    for (let c = 0; c < COLUMN_COUNT; c++) {
+      const cell = (row.cells[c] = row.cells[c] || {});
+      cell.s = "lockedRow";
+    }
+    if (typeof s.setSnapshot === "function") {
+      s.setSnapshot(snap);
+    } else if (typeof wb.applySnapshot === "function" && typeof wb.getSnapshot === "function") {
+      const wSnap = wb.getSnapshot();
+      wb.applySnapshot(wSnap);
+    }
+  } catch (e) {
+    console.warn("applyLockedRowVisual failed", e);
   }
 }
 
@@ -588,8 +626,13 @@ const initializeUniver = async (records: Record<string, any[]>) => {
     const cellData: Record<number, Record<number, { v: any; s?: string }>> = {
       0: headerRow,
     };
-    for (let r = 0; r < data.length; r++)
-      cellData[r + 1] = buildRowCells(data[r]!);
+    for (let r = 0; r < data.length; r++) {
+      const rec = data[r]!;
+      cellData[r + 1] = buildRowCells(rec);
+      if (rec?.managerBlock && currentRoleCode !== "ROLE_ADMIN" && currentRoleCode !== "ROLE_BUH") {
+        LOCKED_ROWS.add(r + 1);
+      }
+    }
     for (let r = data.length + 1; r < data.length + 1 + rowsToAdd; r++) {
       const empty: Record<number, { v: any; s?: string }> = {};
       for (let c = 0; c < COLUMN_COUNT; c++) empty[c] = { v: "", s: "allrows" };
@@ -666,6 +709,15 @@ const initializeUniver = async (records: Record<string, any[]>) => {
 
       for (let row0 = r0; row0 <= r1; row0++) {
         if (socketPatchRows.has(row0)) continue;
+        // Блокируем сохранение для заблокированных строк (не ADMIN/BUH)
+        if (
+          currentRoleCode !== "ROLE_ADMIN" &&
+          currentRoleCode !== "ROLE_BUH" &&
+          LOCKED_ROWS.has(row0)
+        ) {
+          toast.add({ title: "Строка заблокирована", color: "warning" });
+          continue;
+        }
         if (row0 !== 0) scheduleSave(sheet, row0);
       }
     } catch {}

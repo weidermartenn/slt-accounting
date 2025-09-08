@@ -28,4 +28,5 @@ export interface TransportAccounting {
     summa: string | '';
     taxes: number | 0;
     typeOfContainer: string | '';
+    managerBlock?: boolean;
 }

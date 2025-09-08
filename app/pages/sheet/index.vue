@@ -46,7 +46,7 @@ const headers = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 const me: any = await $fetch("/api/auth/me", { headers }).catch(() => null);
 
 const fetchRecords = async (me: any) =>{
-  if (me?.roleCode !== "ROLE_ADMIN" && me?.roleCode !== "ROLE_BUH" && me?.roleCode !== "ROLE_MANAGER") {
+  if (me?.roleCode !== "ROLE_ADMIN" && me?.roleCode !== "ROLE_BUH") {
     store.fetchAll();
   } else {
     store.fetchAllRoleAdmin();
