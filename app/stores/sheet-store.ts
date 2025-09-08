@@ -179,70 +179,34 @@ export const useSheetStore = defineStore("sheet", {
         if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
             const dto = msg.transportAccountingDTO[0] as TransportAccounting;
 
-            // Ищем запись с временным ID
-            const tempIdEntry = this.records[listName].findIndex(r => r.id < 0);
-            if (tempIdEntry !== -1) {
-              this.records[listName][tempIdEntry] = dto;
-              console.log(`[socket] 🔄 обновлена временная запись на id=${dto.id} в листе ${listName}`)
-            } else {
-              // Добавляем как новую запись
-              this.records[listName].push(dto);
-              console.log(`[socket] 🟢 добавлена запись id=${dto.id} в листе ${listName}`);
+            // Проверяем, есть ли уже запись с таким ID
+            const existingIndex = this.records[listName].findIndex(r => r.id === dto.id);
+            if (existingIndex >= 0) {
+              console.log(`[socket] запись с id=${dto.id} уже существует, пропускаем`);
+              return;
             }
-        }
 
-        if (msg.type === "status_update" && msg.transportAccountingDTO?.length) {
+            // Просто добавляем новую запись - без поиска временных
+            this.records[listName].push(dto);
+            console.log(`[socket] добавлена новая запись id=${dto.id}`);
+        } else if (msg.type === "status_update" && msg.transportAccountingDTO?.length) {
             const dto = msg.transportAccountingDTO[0] as TransportAccounting;
-            const idx = this.records[listName].findIndex((r) => r.id === dto.id);
-            if (idx !== -1) {
-            this.records[listName][idx] = dto;
-            console.log(`[socket] 🟡 запись id=${dto.id} обновлена в листе ${listName}`);
-            }
-        }
 
-        if (msg.type === "status_delete" && msg.listToDel) {
-            const ids = Array.isArray(msg.listToDel) ? msg.listToDel : [msg.listToDel];
-            this.records[listName] = this.records[listName].filter(
-            (r) => !ids.includes(r.id)
-            );
-            console.log(`[socket] 🔴 удалены id=${ids.join(", ")} из листа ${listName}`);
+            const existingIndex = this.records[listName].findIndex(r => r.id === dto.id);
+            if (existingIndex >= 0) {
+              this.records[listName][existingIndex] = dto;
+              console.log(`[socket] обновлена запись id=${dto.id}`);
+            }
+        } else if (msg.type === "status_delete" && msg.transportAccountingDTO?.length) {
+            const dto = msg.transportAccountingDTO[0] as TransportAccounting;
+
+            const index = this.records[listName].findIndex(r => r.id === dto.id);
+            if (index >= 0) {
+              this.records[listName].splice(index, 1);
+              console.log(`[socket] удалена запись id=${dto.id}`);
+            }
         }
     },
-    // applySocketMessage(msg: SocketEvent) {
-    //   console.log("[applySocketMessage] применяем сообщение", msg);
-
-    //   if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
-    //     const dto = msg.transportAccountingDTO[0];
-    //     const listName = dto.listName
-    //     console.log(listName);
-    //     if (!this.records[listName]) this.records[listName] = [];
-
-    //     const tempIdx = this.records[listName].findIndex(
-    //       (r) => r.id === dto.id
-    //     );
-
-    //     if (tempIdx !== -1) {
-    //       this.records[listName][tempIdx] = dto;
-    //     } else {
-    //       this.records[listName].push(dto);
-    //     }
-    //   }
-
-    //   if (msg.type === "status_update" && msg.transportAccountingDTO?.length) {
-    //     const dto = msg.transportAccountingDTO[0];
-    //     const listName = dto.listName || "";
-    //     const idx = this.records[listName]?.findIndex((r) => r.id === dto.id);
-    //     if (idx !== -1) this.records[listName][idx] = dto;
-    //   }
-
-    //   if (msg.type === "status_delete" && msg.listToDel) {
-    //     const ids = Array.isArray(msg.listToDel)
-    //       ? msg.listToDel
-    //       : [msg.listToDel];
-    //     for (const listName in this.records) {
-    //       this.records[listName] = this.records[listName].filter(
-    //         (r) => !ids.includes(r.id)
-    //       );
     //     }
     //   }
     // },
@@ -254,13 +218,19 @@ export const useSheetStore = defineStore("sheet", {
         this.records[listName] = [];
       }
 
+      // Применяем изменения только для существующих записей с реальными ID
       if (originalId && originalId > 0) {
         const idx = this.records[listName].findIndex(r => r.id === originalId);
 
         if (idx !== -1) {
-            this.records[listName][idx] = { ...dto };
-            console.log(`[local] добавлена существующая запись id=${originalId}`);
+            this.records[listName][idx] = { ...dto } as unknown as TransportAccounting;
+            console.log(`[local] обновлена существующая запись id=${originalId}`);
+        } else {
+            console.log(`[local] запись с id=${originalId} не найдена для локального обновления`);
         }
+      } else {
+        // Для новых записей НЕ создаем локальные копии, ждем socket-ответа
+        console.log(`[local] пропускаем создание локальной копии для новой записи (id=${originalId}), ждем socket`);
       }
     },
     emitSocketEvent(event: SocketEvent) {

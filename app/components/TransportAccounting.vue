@@ -299,7 +299,7 @@ function getIdFromCell(sheet: any, row0: number): number {
   const a1 = `${colLetter(COLUMN_COUNT)}${row0 + 1}`;
   const v = sheet.getRange?.(a1)?.getValues?.()?.[0]?.[0];
   const n = Number(String(v ?? "").trim());
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return Number.isFinite(n) ? n : 0; // сохраняем временные ID (могут быть отрицательными или положительными)
 }
 
 function getIdsFromRows(sheet: any, rows: number[]): number[] {
@@ -341,7 +341,18 @@ function patchRowValuesExceptProtected(sheet: any, rowIndex: number, dto: Transp
   }
 }
 
-const tempIdToRowMap = ref(new Map<number, number>()); // tmepId -> rowIndex
+// Тихая установка значения ячейки (без повторного scheduleSave)
+function setCellSilently(sheet: any, rowIndex: number, colIndex: number, value: any) {
+  socketPatchRows.add(rowIndex);
+  try {
+    sheet.getRange(rowIndex, colIndex).setValue(value);
+  } finally {
+    queueMicrotask(() => socketPatchRows.delete(rowIndex));
+  }
+}
+
+const tempIdToRowMap = ref(new Map<number, number>()); // tempId -> rowIndex
+const creatingRows = new Set<number>(); // rowIndex currently being created (id=0 sent)
 // ===== автосохранение =====
 function scheduleSave(sheet: any, row0: number) {
   const key = `${sheet.getSheetId?.()}::${row0}`;
@@ -361,19 +372,54 @@ function scheduleSave(sheet: any, row0: number) {
         const listName = getName();
         const dto: TransportAccountingSR = toDto(values, listName);
 
+        // Проверяем, есть ли уже ID в ячейке
+        const currentCellId = sheet.getRange(row0, COLUMN_COUNT - 1).getValue();
+        
         if (!dto.id && isRowEmpty(values)) {
-          if (!sheet.getRange(row0, COLUMN_COUNT - 1).getValue()) {
+          // Пустая строка - создаем временный ID если его еще нет
+          if (!currentCellId) {
             const tempId = createTempId();
-            sheet.getRange(row0, COLUMN_COUNT - 1).setValue(tempId);
+            setCellSilently(sheet, row0, COLUMN_COUNT - 1, tempId);
             tempIdToRowMap.value.set(tempId, row0);
+            console.log(`[save] создан временный ID ${tempId} для строки ${row0}`);
           }
           hasChanges.value = false;
         } else {
+          // Есть данные - сохраняем
           console.log("[save] начало сохранения строки", row0);
           console.log("[save] данные", values);
+          
+          // Если создаем новую запись (id=0), гарантируем наличие временного ID в ячейке и карту соответствия
+          if (!dto.id || dto.id === 0) {
+            if (creatingRows.has(row0)) {
+              console.log(`[save] пропускаем повторный create для строки ${row0} — уже в процессе`);
+              hasChanges.value = false;
+              return;
+            }
+            if (!currentCellId) {
+              const tempId = createTempId();
+              setCellSilently(sheet, row0, COLUMN_COUNT - 1, tempId);
+              tempIdToRowMap.value.set(tempId, row0);
+              console.log(`[save] создан временный ID ${tempId} для строки ${row0} (новая запись)`);
+            } else {
+              // Если в ячейке уже есть значение, считаем его временным ID и записываем маппинг
+              const tmp = Number(String(currentCellId).trim());
+              if (Number.isFinite(tmp) && tmp !== 0) {
+                tempIdToRowMap.value.set(tmp, row0);
+                console.log(`[save] найден существующий временный ID ${tmp} для строки ${row0}`);
+              } else {
+                const tempId = createTempId();
+                setCellSilently(sheet, row0, COLUMN_COUNT - 1, tempId);
+                tempIdToRowMap.value.set(tempId, row0);
+                console.log(`[save] текущий ID некорректен (${currentCellId}), создан новый временный ID ${tempId} для строки ${row0}`);
+              }
+            }
+            dto.id = 0; // Явно указываем серверу создать новую запись
+            creatingRows.add(row0);
+          }
+          
           console.log("[save] dto для отправки", dto);
-          // обновляем локально
-          sheetStore.applyLocalChange(dto);
+          // не создаем локальные копии, ждем socket-ответа
         }
 
         try {
@@ -684,68 +730,102 @@ onMounted(async () => {
       // Обработка создания новых записей
       if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
         const dto = msg.transportAccountingDTO[0];
+        const worksheet = univerAPI.value?.getActiveWorkbook()?.getActiveSheet();
+        
+        if (!worksheet) {
+          console.error("[socket] Worksheet недоступен");
+          return;
+        }
 
-        // Используем текущую редактируемую строку, если она есть
-        if (currentEditingRow.value !== null) {
-          try {
-            const worksheet = univerAPI.value
-              .getActiveWorkbook()
-              .getActiveSheet();
-            worksheet
-              .getRange(currentEditingRow.value, COLUMN_COUNT - 1)
-              .setValue(dto.id);
-            console.log(
-              `[save] обновлен id в строке ${currentEditingRow.value} на ${dto.id}`
-            );
+        let targetRowIndex: number | null = null;
+        let foundByTempId = false;
 
-            // Очищаем временные ID для этой строки
-            for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
-              if (rowIndex === currentEditingRow.value) {
-                tempIdToRowMap.value.delete(tempId);
-              }
-            }
-          } catch (error) {
-            console.error("Ошибка при обновлении ID:", error);
-          }
-        } else {
-          // Резервный механизм: поиск по временному ID
-          let targetRowIndex: number | null = null;
+        // 1. Проверяем, есть ли уже строка с этим ID
+        const existingRowIndex = findRowById(worksheet, dto.id);
+        if (existingRowIndex >= 0) {
+          console.log(`[socket] строка с ID ${dto.id} уже существует на строке ${existingRowIndex}, пропускаем`);
+          return;
+        }
 
-          for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
+        // 2. Ищем по карте временных ID (для клиента-создателя)
+        for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
+          // Доверяем маппингу и берем первую подходящую строку
+          targetRowIndex = rowIndex;
+          tempIdToRowMap.value.delete(tempId);
+          foundByTempId = true;
+          console.log(`[socket] выбрана строка ${rowIndex} по маппингу временного ID ${tempId}`);
+          break;
+        }
+
+        // 3. Если не нашли по временным ID, ищем пустую строку
+        if (targetRowIndex === null) {
+          const rowCount = worksheet.getSheet()._snapshot.rowCount;
+          console.log(`[socket] ищем пустую строку среди ${rowCount} строк`);
+          
+          for (let r = 1; r < rowCount; r++) {
             try {
-              const worksheet = univerAPI.value
-                .getActiveWorkbook()
-                .getActiveSheet();
-              const rowValues = readRowValues(worksheet, rowIndex);
-              const rowDto = toDto(rowValues, listName);
-
-              if (isDtoMatch(rowDto, dto)) {
-                targetRowIndex = rowIndex;
-                tempIdToRowMap.value.delete(tempId);
+              const currentId = getIdFromCell(worksheet, r);
+              const rowValues = readRowValues(worksheet, r);
+              
+              // Проверяем: нет ID и строка пустая
+              if ((!currentId || currentId === 0) && isRowEmpty(rowValues)) {
+                targetRowIndex = r;
+                console.log(`[socket] найдена пустая строка ${r}`);
                 break;
               }
             } catch (error) {
-              console.error("Ошибка при обработке строки:", error);
+              console.error(`Ошибка при проверке строки ${r}:`, error);
             }
           }
+        }
 
-          if (targetRowIndex !== null) {
-            try {
-              const worksheet = univerAPI.value
-                .getActiveWorkbook()
-                .getActiveSheet();
-              worksheet
-                .getRange(targetRowIndex, COLUMN_COUNT - 1)
-                .setValue(dto.id);
-              console.log(
-                `[save] обновлен id в строке ${targetRowIndex} на ${dto.id}`
-              );
-            } catch (error) {
-              console.error("Ошибка при обновлении ID:", error);
+        // 4. Обновляем строку
+        if (targetRowIndex !== null) {
+          try {
+            if (foundByTempId) {
+              // Клиент-создатель: не очищаем вручную (это триггерит повторный save),
+              // а используем патч, который подавляет scheduleSave для этой строки
+              patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
+              worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
+              console.log(`[socket] обновлена локальная строка ${targetRowIndex} данными с ID ${dto.id}`);
+              creatingRows.delete(targetRowIndex);
+            } else {
+              // Другие клиенты: заполняем всю строку
+              patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
+              worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
+              console.log(`[socket] создана новая строка ${targetRowIndex} с ID ${dto.id}`);
             }
-          } else {
-            console.log(`[save] строка не нашлась по временному id ${dto.id}`);
+          } catch (error) {
+            console.error("Ошибка при обновлении строки:", error);
           }
+        } else {
+          console.log(`[socket] не найдена подходящая строка для записи ID ${dto.id}`);
+        }
+      }
+
+      // Обработка удаления записей
+      if (msg.type === "status_delete" && msg.transportAccountingDTO?.length) {
+        const dto = msg.transportAccountingDTO[0];
+        const worksheet = univerAPI.value?.getActiveWorkbook()?.getActiveSheet();
+        
+        if (!worksheet) {
+          console.error("[socket] Worksheet недоступен для удаления");
+          return;
+        }
+
+        // Находим строку с этим ID
+        const rowToDelete = findRowById(worksheet, dto.id);
+        if (rowToDelete >= 0) {
+          console.log(`[socket] удаляем строку ${rowToDelete} с ID ${dto.id}`);
+          
+          // Очищаем всю строку
+          for (let col = 0; col < COLUMN_COUNT; col++) {
+            worksheet.getRange(rowToDelete, col).setValue("");
+          }
+          
+          console.log(`[socket] строка ${rowToDelete} очищена`);
+        } else {
+          console.log(`[socket] строка с ID ${dto.id} не найдена для удаления`);
         }
       }
     });
