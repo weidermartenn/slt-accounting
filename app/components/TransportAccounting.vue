@@ -531,6 +531,26 @@ function setCellSilently(sheet: any, rowIndex: number, colIndex: number, value: 
 
 const tempIdToRowMap = ref(new Map<number, number>()); // tempId -> rowIndex
 const creatingRows = new Set<number>(); // rowIndex currently being created (id=0 sent)
+// Group sorted (desc) row indices into contiguous ranges
+function groupDescRowsToRanges(rowsDesc: number[]): { start: number; count: number }[] {
+  const ranges: { start: number; count: number }[] = [];
+  if (!rowsDesc.length) return ranges;
+  const first = rowsDesc[0]!; // safe after length check
+  let start: number = first;
+  let count = 1;
+  for (let i = 1; i < rowsDesc.length; i++) {
+    const r = rowsDesc[i]!; // safe by loop bounds
+    if (r === start - count) {
+      count++;
+    } else {
+      ranges.push({ start: start - count + 1, count });
+      start = r;
+      count = 1;
+    }
+  }
+  ranges.push({ start: start - count + 1, count });
+  return ranges;
+}
 // ===== автосохранение =====
 function scheduleSave(sheet: any, row0: number) {
   const key = `${sheet.getSheetId?.()}::${row0}`;
@@ -1128,59 +1148,51 @@ onMounted(async () => {
           return;
         }
 
-        for (const id of ids) {
-          // Сначала пробуем на активном листе (текущем периоде)
-          const activeSheet = wb.getActiveSheet?.();
-          let rowToDelete = activeSheet ? findRowById(activeSheet, id) : -1;
-          if (activeSheet && rowToDelete >= 0) {
-            console.log(`[socket] удаляем строку ${rowToDelete} с ID ${id} на активном листе`);
-            const uSheet = wb.getSheetBySheetId?.(activeSheet.getSheetId?.());
-            if (uSheet?.deleteRows) {
-              try {
-                uSheet.deleteRows(rowToDelete, 1);
-              } catch (e) {
-                console.error("[socket] ошибка deleteRows:", e);
-                for (let col = 0; col < COLUMN_COUNT; col++) {
-                  activeSheet.getRange(rowToDelete, col).setValue("");
-                }
-              }
-            } else {
-              for (let col = 0; col < COLUMN_COUNT; col++) {
-                activeSheet.getRange(rowToDelete, col).setValue("");
-              }
-            }
+        // Удаляем пакетно: сначала активный лист, затем остальные
+        const activeSheet = wb.getActiveSheet?.();
+        const sheetsToProcess: any[] = [];
+        if (activeSheet) sheetsToProcess.push(activeSheet);
+        const order: string[] = (wb as any).getSheetOrder?.() || [];
+        for (const sid of order) {
+          const sh = wb.getSheetBySheetId?.(sid);
+          if (sh && (!activeSheet || sh.getSheetId?.() !== activeSheet.getSheetId?.())) sheetsToProcess.push(sh);
+        }
 
-            for (const [tmpId, rIdx] of tempIdToRowMap.value.entries()) {
-              if (rIdx === rowToDelete) tempIdToRowMap.value.delete(tmpId);
-            }
-            creatingRows.delete(rowToDelete);
-            continue;
+        for (const sh of sheetsToProcess) {
+          // batch-read ID column for this sheet
+          const rowCount = sh.getSheet()._snapshot.rowCount;
+          const rangeA1 = `${ID_COL_A1}1:${ID_COL_A1}${rowCount}`;
+          const values2d: any[][] = sh.getRange?.(rangeA1)?.getValues?.() || [];
+          const idToRow = new Map<number, number>();
+          for (let r1 = 1; r1 <= rowCount; r1++) {
+            const v = Number(values2d[r1 - 1]?.[0]);
+            if (Number.isFinite(v) && v > 0) idToRow.set(v, r1 - 1);
           }
-
-          // Если на активном листе нет — ищем по всем листам
-          const order: string[] = (wb as any).getSheetOrder?.() || [];
-          for (const sid of order) {
-            const sh = wb.getSheetBySheetId?.(sid);
-            if (!sh) continue;
-            const r = findRowById(sh, id);
-            if (r >= 0) {
-              console.log(`[socket] удаляем строку ${r} с ID ${id} на листе sid=${sid}`);
-              if (sh.deleteRows) {
-                try {
-                  sh.deleteRows(r, 1);
-                } catch (e) {
-                  console.error("[socket] ошибка deleteRows (all-sheets):", e);
-                  for (let col = 0; col < COLUMN_COUNT; col++) {
-                    sh.getRange(r, col).setValue("");
-                  }
-                }
-              } else {
-                for (let col = 0; col < COLUMN_COUNT; col++) {
-                  sh.getRange(r, col).setValue("");
-                }
+          // collect rows to delete on this sheet
+          const rowsHere: number[] = [];
+          for (const id of ids) {
+            const rr = idToRow.get(id);
+            if (typeof rr === 'number') rowsHere.push(rr);
+          }
+          if (!rowsHere.length) continue;
+          // sort desc and group contiguous ranges
+          rowsHere.sort((a,b)=>b-a);
+          const ranges = groupDescRowsToRanges(rowsHere);
+          const uSheet = wb.getSheetBySheetId?.(sh.getSheetId?.());
+          for (const rg of ranges) {
+            try {
+              uSheet?.deleteRows?.(rg.start, rg.count);
+            } catch (e) {
+              console.error("[socket] ошибка deleteRows (group):", e);
+              // fallback: clear values in range
+              for (let r = rg.start; r < rg.start + rg.count; r++) {
+                for (let c = 0; c < COLUMN_COUNT; c++) sh.getRange(r, c).setValue("");
               }
-              break;
             }
+          }
+          // cleanup temp map for deleted rows
+          for (const [tmpId, rIdx] of tempIdToRowMap.value.entries()) {
+            if (rowsHere.includes(rIdx)) tempIdToRowMap.value.delete(tmpId);
           }
         }
       }
