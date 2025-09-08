@@ -804,28 +804,77 @@ onMounted(async () => {
       }
 
       // Обработка удаления записей
-      if (msg.type === "status_delete" && msg.transportAccountingDTO?.length) {
-        const dto = msg.transportAccountingDTO[0];
-        const worksheet = univerAPI.value?.getActiveWorkbook()?.getActiveSheet();
-        
-        if (!worksheet) {
-          console.error("[socket] Worksheet недоступен для удаления");
+      if (msg.type === "status_delete") {
+        const api = univerAPI.value;
+        const wb = api?.getActiveWorkbook?.();
+        if (!api || !wb) {
+          console.error("[socket] Workbook недоступен для удаления");
           return;
         }
 
-        // Находим строку с этим ID
-        const rowToDelete = findRowById(worksheet, dto.id);
-        if (rowToDelete >= 0) {
-          console.log(`[socket] удаляем строку ${rowToDelete} с ID ${dto.id}`);
-          
-          // Очищаем всю строку
-          for (let col = 0; col < COLUMN_COUNT; col++) {
-            worksheet.getRange(rowToDelete, col).setValue("");
+        const listToDel: any = (msg as any).listToDel;
+        const ids: number[] = Array.isArray(listToDel)
+          ? listToDel.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
+          : [];
+        if (!ids.length) {
+          console.warn("[socket] status_delete без listToDel — нечего удалять");
+          return;
+        }
+
+        for (const id of ids) {
+          // Сначала пробуем на активном листе (текущем периоде)
+          const activeSheet = wb.getActiveSheet?.();
+          let rowToDelete = activeSheet ? findRowById(activeSheet, id) : -1;
+          if (activeSheet && rowToDelete >= 0) {
+            console.log(`[socket] удаляем строку ${rowToDelete} с ID ${id} на активном листе`);
+            const uSheet = wb.getSheetBySheetId?.(activeSheet.getSheetId?.());
+            if (uSheet?.deleteRows) {
+              try {
+                uSheet.deleteRows(rowToDelete, 1);
+              } catch (e) {
+                console.error("[socket] ошибка deleteRows:", e);
+                for (let col = 0; col < COLUMN_COUNT; col++) {
+                  activeSheet.getRange(rowToDelete, col).setValue("");
+                }
+              }
+            } else {
+              for (let col = 0; col < COLUMN_COUNT; col++) {
+                activeSheet.getRange(rowToDelete, col).setValue("");
+              }
+            }
+
+            for (const [tmpId, rIdx] of tempIdToRowMap.value.entries()) {
+              if (rIdx === rowToDelete) tempIdToRowMap.value.delete(tmpId);
+            }
+            creatingRows.delete(rowToDelete);
+            continue;
           }
-          
-          console.log(`[socket] строка ${rowToDelete} очищена`);
-        } else {
-          console.log(`[socket] строка с ID ${dto.id} не найдена для удаления`);
+
+          // Если на активном листе нет — ищем по всем листам
+          const order: string[] = (wb as any).getSheetOrder?.() || [];
+          for (const sid of order) {
+            const sh = wb.getSheetBySheetId?.(sid);
+            if (!sh) continue;
+            const r = findRowById(sh, id);
+            if (r >= 0) {
+              console.log(`[socket] удаляем строку ${r} с ID ${id} на листе sid=${sid}`);
+              if (sh.deleteRows) {
+                try {
+                  sh.deleteRows(r, 1);
+                } catch (e) {
+                  console.error("[socket] ошибка deleteRows (all-sheets):", e);
+                  for (let col = 0; col < COLUMN_COUNT; col++) {
+                    sh.getRange(r, col).setValue("");
+                  }
+                }
+              } else {
+                for (let col = 0; col < COLUMN_COUNT; col++) {
+                  sh.getRange(r, col).setValue("");
+                }
+              }
+              break;
+            }
+          }
         }
       }
     });
