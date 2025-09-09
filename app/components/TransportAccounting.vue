@@ -1,8 +1,3 @@
-// simple logger toggle (not replacing existing logs yet)
-const DEBUG = false;
-function dbg(...args: any[]) {
-  if (DEBUG) console.log(...args);
-}
 <template>
   <div class="relative" style="width: 100%; height: 90vh">
     <!-- Оверлей-лоадер -->
@@ -23,6 +18,14 @@ function dbg(...args: any[]) {
     >
       <UIcon name="i-lucide-loader" class="w-5 h-5 animate-spin" />
       <span class="ml-2">Сохранение</span>
+    </div>
+    <!-- Индикатор операций (добавление/удаление) -->
+    <div
+      v-show="showBusyOverlay"
+      class="absolute left-1/2 -translate-x-1/2 -top-13 z-50 flex items-center text-zinc-900 rounded-sm px-4 py-2 shadow bg-white/90"
+    >
+      <UIcon name="i-lucide-activity" class="w-5 h-5 animate-pulse" />
+      <span class="ml-2">{{ busyMessage }}</span>
     </div>
 
     <!-- Кнопки управления -->
@@ -77,6 +80,12 @@ import {
 import type { RoleCode } from "~/utils/roles";
 import { useSheetStore } from "~/stores/sheet-store";
 // removed unused: ArrangeTypeEnum, get, convertPositionCellToSheetOverGrid, degToRad
+
+// simple logger toggle (not replacing existing logs yet)
+const DEBUG = false;
+function dbg(...args: any[]) {
+  if (DEBUG) console.log(...args);
+}
 
 const toast = useToast();
 const sheetStore = useSheetStore();
@@ -241,6 +250,8 @@ const SAVING_MIN_VISIBLE_MS = 800;
 
 const showFallback = ref(true);
 const showSaving = ref(false);
+const showBusyOverlay = ref(false);
+const busyMessage = ref<string>("");
 const univerAPI = ref<any>(null);
 let disposeCmd: any;
 let currentRoleCode = "";
@@ -1007,228 +1018,182 @@ onMounted(async () => {
       const listName = getName();
       sheetStore.applySocketMessage(msg, listName);
 
-      // Обработка создания новых записей
-      if (msg.type === "status_create" && msg.transportAccountingDTO?.length) {
-        const worksheet = univerAPI.value?.getActiveWorkbook()?.getActiveSheet();
-        
-        if (!worksheet) {
-          console.error("[socket] Worksheet недоступен");
-          return;
-        }
+      // Обработка создания новых записей (батч, с безопасной плашкой)
+      if (msg.type === "status_create" && Array.isArray(msg.transportAccountingDTO) && msg.transportAccountingDTO.length) {
+        showBusyOverlay.value = true;
+        busyMessage.value = "Применение добавлений...";
+        (async () => {
+          try {
+            await nextTick();
+            await new Promise((r) => setTimeout(r, 0));
+            const worksheet = univerAPI.value?.getActiveWorkbook()?.getActiveSheet();
+            if (!worksheet) return;
 
-        // Обрабатываем все записи в массиве
-        for (const dto of msg.transportAccountingDTO) {
-          let targetRowIndex: number | null = null;
-          let foundByTempId = false;
+            for (const dto of msg.transportAccountingDTO) {
+              let targetRowIndex: number | null = null;
 
-          // 1. Проверяем, есть ли уже строка с этим ID
-          const existingRowIndex = findRowById(worksheet, dto.id);
-          if (existingRowIndex >= 0) {
-            console.log(`[socket] строка с ID ${dto.id} уже существует на строке ${existingRowIndex}, пропускаем`);
-            continue;
-          }
+              // 1) Уже существует — пропускаем
+              const existingRowIndex = findRowById(worksheet, dto.id);
+              if (existingRowIndex >= 0) continue;
 
-          // 2. Сначала пытаемся сопоставить с ЛОКАЛЬНЫМИ pending строками по содержимому
-          if (pending.rows.size > 0) {
-            const listNameLocal = getName();
-            for (const r of Array.from(pending.rows).sort((a,b)=>a-b)) {
-              try {
-                const vals = readRowValues(worksheet, r);
-                const localDto = toDto(vals, listNameLocal);
-                if (isDtoMatch(localDto, dto)) {
-                  targetRowIndex = r;
-                  console.log(`[socket] совпадение по содержимому найдено для ID ${dto.id} в строке ${r}`);
-                  break;
-                }
-              } catch {}
-            }
-          }
-
-          // 2.1 Если совпадения по содержимому нет, но есть pending строки — берем ближайшую (с наименьшим индексом)
-          if (targetRowIndex === null && pending.rows.size > 0) {
-            targetRowIndex = Math.min(...Array.from(pending.rows));
-            console.log(`[socket] используем ближайшую pending-строку ${targetRowIndex} для ID ${dto.id}`);
-          }
-
-          // 2.2 (опционально) Если всё ещё не нашли и есть tempId маппинг (редкий случай), используем его
-          if (targetRowIndex === null) {
-            for (const [tempId, rowIndex] of tempIdToRowMap.value.entries()) {
-              targetRowIndex = rowIndex;
-              tempIdToRowMap.value.delete(tempId);
-              foundByTempId = true;
-              console.log(`[socket] выбрана строка ${rowIndex} по маппингу временного ID ${tempId}`);
-              break;
-            }
-          }
-
-          // 3. Если не нашли ни среди pending, ни по tempId — ищем пустую строку
-          if (targetRowIndex === null) {
-            const rowCount = worksheet.getSheet()._snapshot.rowCount;
-            console.log(`[socket] ищем пустую строку среди ${rowCount} строк для ID ${dto.id}`);
-            
-            for (let r = 1; r < rowCount; r++) {
-              try {
-                const currentId = getIdFromCell(worksheet, r);
-                const rowValues = readRowValues(worksheet, r);
-                
-                // Проверяем: нет ID и строка пустая
-                if ((!currentId || currentId === 0) && isRowEmpty(rowValues)) {
-                  targetRowIndex = r;
-                  console.log(`[socket] найдена пустая строка ${r} для ID ${dto.id}`);
-                  break;
-                }
-              } catch (error) {
-                console.error(`Ошибка при проверке строки ${r}:`, error);
-              }
-            }
-          }
-
-          // 4. Обновляем строку
-          if (targetRowIndex !== null) {
-            try {
-              // Если строка относилась к локально вставленным (pending), сначала очищаем её
-              const shouldClear = pending.rows.has(targetRowIndex);
-              if (shouldClear) {
-                console.log(`[socket] очищаем локально вставленную строку ${targetRowIndex} перед применением серверных данных`);
-                for (let c = 0; c < COLUMN_COUNT; c++) {
-                  worksheet.getRange(targetRowIndex, c).setValue("");
-                }
-                pending.rows.delete(targetRowIndex);
-                creatingRows.delete(targetRowIndex);
-              }
-
-              // Применяем серверные данные
-              patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
-              worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
-              console.log(`[socket] строка ${targetRowIndex} заполнена данными ID ${dto.id}`);
-            } catch (error) {
-              console.error("Ошибка при обновлении строки:", error);
-            }
-          } else {
-            console.log(`[socket] не найдена подходящая строка для записи ID ${dto.id}`);
-          }
-        }
-        
-        // После обработки всех записей: если остались pending-строки (значит сервер их не подтвердил)
-        // очищаем их из таблицы и сбрасываем подсветку
-        if (msg.transportAccountingDTO.length > 0) {
-          setTimeout(() => {
-            try {
+              // 2) Совпадение по pending содержимому
               if (pending.rows.size > 0) {
-                const wb = univerAPI.value?.getActiveWorkbook?.();
-                const sheet = wb?.getActiveSheet?.();
-                if (sheet) {
-                  for (const r of Array.from(pending.rows)) {
-                    for (let c = 0; c < COLUMN_COUNT; c++) sheet.getRange(r, c).setValue("");
-                  }
+                const listNameLocal = getName();
+                for (const r of Array.from(pending.rows).sort((a,b)=>a-b)) {
+                  try {
+                    const vals = readRowValues(worksheet, r);
+                    const localDto = toDto(vals, listNameLocal);
+                    if (isDtoMatch(localDto, dto)) { targetRowIndex = r; break; }
+                  } catch {}
                 }
-                pending.rows.clear();
               }
-            } catch {}
+
+              // 3) Ближайшая pending
+              if (targetRowIndex === null && pending.rows.size > 0) {
+                targetRowIndex = Math.min(...Array.from(pending.rows));
+              }
+
+              // 4) tempId маппинг
+              if (targetRowIndex === null) {
+                const it = tempIdToRowMap.value.entries().next();
+                if (!it.done) {
+                  const [tempId, rowIndex] = it.value as [number, number];
+                  targetRowIndex = rowIndex;
+                  tempIdToRowMap.value.delete(tempId);
+                }
+              }
+
+              // 5) Первая пустая строка
+              if (targetRowIndex === null) {
+                const rowCount = worksheet.getSheet()._snapshot.rowCount;
+                for (let r = 1; r < rowCount; r++) {
+                  try {
+                    const currentId = getIdFromCell(worksheet, r);
+                    const rowValues = readRowValues(worksheet, r);
+                    if ((!currentId || currentId === 0) && isRowEmpty(rowValues)) { targetRowIndex = r; break; }
+                  } catch {}
+                }
+              }
+
+              // 6) Применяем данные
+              if (targetRowIndex !== null) {
+                const shouldClear = pending.rows.has(targetRowIndex);
+                if (shouldClear) {
+                  for (let c = 0; c < COLUMN_COUNT; c++) worksheet.getRange(targetRowIndex, c).setValue("");
+                  pending.rows.delete(targetRowIndex);
+                  creatingRows.delete(targetRowIndex);
+                }
+                patchRowValuesExceptProtected(worksheet, targetRowIndex, dto);
+                worksheet.getRange(targetRowIndex, COLUMN_COUNT - 1).setValue(dto.id);
+              }
+            }
+
             applyPendingRows([]);
-          }, 200);
-        }
+          } finally {
+            showBusyOverlay.value = false;
+          }
+        })();
       }
 
-      // Обработка удаления записей
+      // Обработка удаления записей (батч, с безопасной плашкой)
       if (msg.type === "status_delete") {
-        const api = univerAPI.value;
-        const wb = api?.getActiveWorkbook?.();
-        if (!api || !wb) {
-          console.error("[socket] Workbook недоступен для удаления");
-          return;
-        }
+        showBusyOverlay.value = true;
+        busyMessage.value = "Удаление записей...";
+        (async () => {
+          try {
+            await nextTick();
+            await new Promise((r) => setTimeout(r, 0));
+            const api = univerAPI.value;
+            const wb = api?.getActiveWorkbook?.();
+            if (!api || !wb) return;
 
-        const listToDel: any = (msg as any).listToDel;
-        const ids: number[] = Array.isArray(listToDel)
-          ? listToDel.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
-          : [];
-        if (!ids.length) {
-          console.warn("[socket] status_delete без listToDel — нечего удалять");
-          return;
-        }
+            const listToDel: any = (msg as any).listToDel;
+            const ids: number[] = Array.isArray(listToDel)
+              ? listToDel.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0)
+              : [];
+            if (!ids.length) return;
 
-        // Удаляем пакетно: сначала активный лист, затем остальные
-        const activeSheet = wb.getActiveSheet?.();
-        const sheetsToProcess: any[] = [];
-        if (activeSheet) sheetsToProcess.push(activeSheet);
-        const order: string[] = (wb as any).getSheetOrder?.() || [];
-        for (const sid of order) {
-          const sh = wb.getSheetBySheetId?.(sid);
-          if (sh && (!activeSheet || sh.getSheetId?.() !== activeSheet.getSheetId?.())) sheetsToProcess.push(sh);
-        }
+            // Удаляем пакетно: сначала активный лист, затем остальные
+            const activeSheet = wb.getActiveSheet?.();
+            const sheetsToProcess: any[] = [];
+            if (activeSheet) sheetsToProcess.push(activeSheet);
+            const order: string[] = (wb as any).getSheetOrder?.() || [];
+            for (const sid of order) {
+              const sh = wb.getSheetBySheetId?.(sid);
+              if (sh && (!activeSheet || sh.getSheetId?.() !== activeSheet.getSheetId?.())) sheetsToProcess.push(sh);
+            }
 
-        for (const sh of sheetsToProcess) {
-          // batch-read ID column for this sheet
-          const rowCount = sh.getSheet()._snapshot.rowCount;
-          const rangeA1 = `${ID_COL_A1}1:${ID_COL_A1}${rowCount}`;
-          const values2d: any[][] = sh.getRange?.(rangeA1)?.getValues?.() || [];
-          const idToRow = new Map<number, number>();
-          for (let r1 = 1; r1 <= rowCount; r1++) {
-            const v = Number(values2d[r1 - 1]?.[0]);
-            if (Number.isFinite(v) && v > 0) idToRow.set(v, r1 - 1);
-          }
-          // collect rows to delete on this sheet
-          const rowsHere: number[] = [];
-          for (const id of ids) {
-            const rr = idToRow.get(id);
-            if (typeof rr === 'number') rowsHere.push(rr);
-          }
-          if (!rowsHere.length) continue;
-          // sort desc and group contiguous ranges
-          rowsHere.sort((a,b)=>b-a);
-          const ranges = groupDescRowsToRanges(rowsHere);
-          const uSheet = wb.getSheetBySheetId?.(sh.getSheetId?.());
-          for (const rg of ranges) {
-            try {
-              uSheet?.deleteRows?.(rg.start, rg.count);
-            } catch (e) {
-              console.error("[socket] ошибка deleteRows (group):", e);
-              // fallback: clear values in range
-              for (let r = rg.start; r < rg.start + rg.count; r++) {
-                for (let c = 0; c < COLUMN_COUNT; c++) sh.getRange(r, c).setValue("");
+            for (const sh of sheetsToProcess) {
+              // batch-read ID column for this sheet
+              const rowCount = sh.getSheet()._snapshot.rowCount;
+              const rangeA1 = `${ID_COL_A1}1:${ID_COL_A1}${rowCount}`;
+              const values2d: any[][] = sh.getRange?.(rangeA1)?.getValues?.() || [];
+              const idToRow = new Map<number, number>();
+              for (let r1 = 1; r1 <= rowCount; r1++) {
+                const v = Number(values2d[r1 - 1]?.[0]);
+                if (Number.isFinite(v) && v > 0) idToRow.set(v, r1 - 1);
+              }
+              // collect rows to delete on this sheet
+              const rowsHere: number[] = [];
+              for (const id of ids) {
+                const rr = idToRow.get(id);
+                if (typeof rr === 'number') rowsHere.push(rr);
+              }
+              if (!rowsHere.length) continue;
+              // sort desc and group contiguous ranges
+              rowsHere.sort((a,b)=>b-a);
+              const ranges = groupDescRowsToRanges(rowsHere);
+              const uSheet = wb.getSheetBySheetId?.(sh.getSheetId?.());
+              for (const rg of ranges) {
+                try {
+                  uSheet?.deleteRows?.(rg.start, rg.count);
+                } catch (e) {
+                  // fallback: clear values in range
+                  for (let r = rg.start; r < rg.start + rg.count; r++) {
+                    for (let c = 0; c < COLUMN_COUNT; c++) sh.getRange(r, c).setValue("");
+                  }
+                }
+              }
+              // cleanup temp map for deleted rows
+              for (const [tmpId, rIdx] of tempIdToRowMap.value.entries()) {
+                if (rowsHere.includes(rIdx)) tempIdToRowMap.value.delete(tmpId);
               }
             }
+          } finally {
+            showBusyOverlay.value = false;
           }
-          // cleanup temp map for deleted rows
-          for (const [tmpId, rIdx] of tempIdToRowMap.value.entries()) {
-            if (rowsHere.includes(rIdx)) tempIdToRowMap.value.delete(tmpId);
-          }
-        }
+        })();
       }
     });
   }
 });
 
 // Вспомогательная функция для сравнения DTO
-function isDtoMatch(
-  dto1: Partial<TransportAccountingSR>,
-  dto2: Partial<TransportAccountingSR>
-): boolean {
-  // Нормализатор значений: обрезать пробелы, привести числа с запятой, игнорировать регистр
-  const norm = (v: any) => {
-    if (v == null) return "";
-    if (typeof v === 'number') return String(v);
-    const s = String(v).replace(/\r?\n/g, "").trim();
-    // заменить запятые на точки в числах
-    if (/^\d+[\.,]\d+$/.test(s)) return s.replace(',', '.');
-    return s.toLowerCase();
-  };
+  function isDtoMatch(
+    dto1: Partial<TransportAccountingSR>,
+    dto2: Partial<TransportAccountingSR>
+  ): boolean {
+    const norm = (v: any) => {
+      if (v == null) return "";
+      if (typeof v === 'number') return String(v);
+      const s = String(v).replace(/\r?\n/g, "").trim();
+      if (/^\d+[\.,]\d+$/.test(s)) return s.replace(',', '.');
+      return s.toLowerCase();
+    };
 
-  // Сравниваем только недатированные ключи (даты могут быть в Excel serial и не совпадут)
-  const fieldsToCompare: (keyof TransportAccountingSR)[] = [
-    "numberOfContainer",
-    "cargo",
-    "typeOfContainer",
-    "addressOfDelivery",
-    "client",
-    "contractor",
-    "driver",
-    "formPayAs",
-  ];
+    const fieldsToCompare: (keyof TransportAccountingSR)[] = [
+      "numberOfContainer",
+      "cargo",
+      "typeOfContainer",
+      "addressOfDelivery",
+      "client",
+      "contractor",
+      "driver",
+      "formPayAs",
+    ];
 
-  return fieldsToCompare.every((field) => norm(dto1[field]) === norm(dto2[field]));
-}
+    return fieldsToCompare.every((field) => norm(dto1[field]) === norm(dto2[field]));
+  }
 
 let lastRecords: Record<string, TransportAccounting[]> = {};
 watch(
@@ -1258,7 +1223,7 @@ watch(
     const updatedRecords = newItems.filter((n) => {
       const old = oldItems.find((o) => o.id === n.id);
       return old && JSON.stringify(old) !== JSON.stringify(n);
-    })
+    });
     
     console.log('[watch] updatedRecords', updatedRecords);
 
