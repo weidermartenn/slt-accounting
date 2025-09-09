@@ -90,6 +90,65 @@ function dbg(...args: any[]) {
 const toast = useToast();
 const sheetStore = useSheetStore();
 
+// Колонки с датами (A, E, L, T)
+const DATE_COLUMNS = new Set([0, 4, 11, 19]);
+
+// Функция для валидации формата и корректности даты
+function isValidDateFormat(value: string): boolean {
+  if (!value || typeof value !== 'string') return true; // пустые значения разрешены
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  
+  // Поддерживаемые форматы: dd.MM.YYYY или YYYY-MM-dd
+  const ddMMyyyyPattern = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+  const yyyyMMddPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+  
+  let day: number, month: number, year: number;
+  
+  // Проверяем формат dd.MM.YYYY
+  const ddMMMatch = ddMMyyyyPattern.exec(trimmed);
+  if (ddMMMatch && ddMMMatch[1] && ddMMMatch[2] && ddMMMatch[3]) {
+    day = parseInt(ddMMMatch[1], 10);
+    month = parseInt(ddMMMatch[2], 10);
+    year = parseInt(ddMMMatch[3], 10);
+  } else {
+    // Проверяем формат YYYY-MM-dd
+    const yyyyMMMatch = yyyyMMddPattern.exec(trimmed);
+    if (yyyyMMMatch && yyyyMMMatch[1] && yyyyMMMatch[2] && yyyyMMMatch[3]) {
+      year = parseInt(yyyyMMMatch[1], 10);
+      month = parseInt(yyyyMMMatch[2], 10);
+      day = parseInt(yyyyMMMatch[3], 10);
+    } else {
+      return false; // не соответствует ни одному формату
+    }
+  }
+  
+  // Проверяем корректность даты
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (year < 1900 || year > 2100) return false; // разумные пределы года
+  
+  // Проверяем количество дней в месяце
+  const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  
+  // Учитываем високосный год для февраля
+  if (month === 2 && isLeapYear(year)) {
+    if (day > 29) return false;
+  } else {
+    const maxDays = daysInMonth[month - 1];
+    if (maxDays && day > maxDays) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+// Функция для проверки високосного года
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+}
+
 // Pending rows to save and highlight support
 const pending = reactive<{ rows: Set<number> }>({ rows: new Set<number>() });
 let lastHighlightedRows: number[] = [];
@@ -941,6 +1000,50 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       const rng = p.range || (Array.isArray(p.ranges) ? p.ranges[0] : {}) || {};
       let r0 = rng.startRow ?? p.row ?? p.startRow ?? 0;
       let r1 = rng.endRow ?? p.row ?? p.endRow ?? r0;
+      let c0 = rng.startColumn ?? p.column ?? p.startColumn ?? 0;
+      let c1 = rng.endColumn ?? p.column ?? p.endColumn ?? c0;
+
+      // Валидация доступа к колонке E для менеджеров
+      if (currentRoleCode === "ROLE_MANAGER") {
+        for (let col = c0; col <= c1; col++) {
+          if (col === 4) { // колонка E (dateOfSubmission)
+            toast.add({ 
+              title: "Доступ к этой колонке запрещен", 
+              color: "error"
+            });
+            // Отменяем команду через undo
+            if (api.undo) {
+              api.undo();
+            }
+            return; // прерываем выполнение
+          }
+        }
+      }
+
+      // Валидация формата даты для колонок A, E, L, T
+      for (let col = c0; col <= c1; col++) {
+        if (DATE_COLUMNS.has(col)) {
+          for (let row0 = r0; row0 <= r1; row0++) {
+            if (row0 > 0) { // не проверяем заголовок
+              const cellValue = sheet.getRange(row0, col).getValue();
+              const stringValue = String(cellValue || "").trim();
+              
+              if (stringValue && !isValidDateFormat(stringValue)) {
+                toast.add({ 
+                  title: "Неверный формат даты", 
+                  description: "Поддерживаемый формат: dd.MM.YYYY или YYYY-MM-dd",
+                  color: "error"
+                });
+                // Отменяем команду через undo
+                if (api.undo) {
+                  api.undo();
+                }
+                return; // прерываем выполнение
+              }
+            }
+          }
+        }
+      }
 
       for (let row0 = r0; row0 <= r1; row0++) {
         if (socketPatchRows.has(row0)) continue;
