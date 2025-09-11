@@ -5,6 +5,7 @@
 </template>
 
 <script setup lang="ts">
+import { HEADERS } from "~/components/attributes/headers";
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
 // univer dynamic modules
 let UniverSheetsCorePreset: any;
@@ -61,6 +62,24 @@ async function initUniver (records: TransportAccounting[]) {
             UniverSheetsCorePreset({ container: "u", ribbonType: "simple" }),
         ]
     })
+
+    const lc = univerAPI.value.addEvent(univerAPI.value.Event.LifeCycleChanged, (p: { stage: any }) => {
+        if (p.stage === univerAPI.value.Enum.LifecycleStages.Rendered)
+        showFallback.value = false;
+    });
+
+    const sheets: Record<string, any> = {};
+    let i = 0;
+    for (const [periodName, items] of Object.entries(records || {})) {
+        const id = `sheet-${++i}`;
+        const data = items; 
+        const rowsToAdd = 100;
+
+        const headerRow: Record<number, { v: any; s?: string }> = {};
+        HEADERS.forEach((h, c) => {
+            headerRow[c] = { v: h, s: "hdr" };
+        });
+    }
 }
 
 onBeforeMount(async () => {
