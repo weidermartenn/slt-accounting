@@ -31,6 +31,14 @@
     <!-- Кнопки управления -->
     <div class="absolute right-5 -top-12 z-50 flex gap-2">
       <UButton
+        @click="setSelection"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-save"
+      >
+        set selection
+      </UButton>
+      <UButton
         :disabled="pending.rows.size === 0"
         @click="onSavePasted"
         color="warning"
@@ -245,6 +253,36 @@ function applyPendingRows(rows: number[]) {
   } catch (e) {
     console.warn('applyPendingRows failed', e);
   }
+}
+
+const setSelection = () => {
+  const wb = univerAPI.value.getActiveWorkbook();
+  const ws = wb.getActiveSheet();
+
+  const sel = ws.getSelection().getActiveRange().getA1Notation();
+  const selNums = sel.split(':').map((part: string) => parseInt(part.substring(1)));
+
+  const themes = wb.getRegisteredRangeThemes();
+  const r = ws.getRange(`A${selNums[0]}:AB${selNums[1]}`);
+
+  const rts = wb.createRangeThemeStyle('w-green', {
+    firstRowStyle: {
+      bg: {
+        rgb: '#92ED6B'
+      }
+    },
+    secondRowStyle: {
+      bg: {
+        rgb: '#92ED6B'
+      }
+    }
+  })
+  wb.registerRangeTheme(rts)
+  r.useThemeStyle('w-green')
+  r.activate();
+
+  console.log('getCellDatas', r.getCellDatas());
+
 }
 
 // Save via button
@@ -842,16 +880,14 @@ const initializeUniver = async (records: Record<string, any[]>) => {
   for (const [periodName, items] of Object.entries(records || {})) {
     const id = `sheet-${++i}`;
     const data = Array.isArray(items) ? (items as TransportAccounting[]) : [];
-    const rowsToAdd = 1000;
+    const rowsToAdd = 100;
 
     const headerRow: Record<number, { v: any; s?: string }> = {};
     HEADERS.forEach((h, col) => {
       headerRow[col] = { v: h, s: "hdr" };
     });
 
-    const cellData: Record<number, Record<number, { v: any; s?: string }>> = {
-      0: headerRow,
-    };
+    const cellData: Record<number, Record<number, { v: any; s?: string }>> = { 0: headerRow };
     for (let r = 0; r < data.length; r++) {
       const rec = data[r]!;
       cellData[r + 1] = buildRowCells(rec);
@@ -859,7 +895,9 @@ const initializeUniver = async (records: Record<string, any[]>) => {
         LOCKED_ROWS.add(r + 1);
       }
     }
-    for (let r = data.length + 1; r < data.length + 1 + rowsToAdd; r++) {
+
+    const totalRows = data.length + rowsToAdd;
+    for (let r = data.length + 1; r < totalRows; r++) {
       const empty: Record<number, { v: any; s?: string }> = {};
       for (let c = 0; c < COLUMN_COUNT; c++) empty[c] = { v: "", s: "allrows" };
       cellData[r] = empty;
@@ -874,7 +912,7 @@ const initializeUniver = async (records: Record<string, any[]>) => {
       name: periodName,
       tabColor: "#009999",
       hidden: 0,
-      rowCount: data.length + 1 + rowsToAdd,
+      rowCount: totalRows,
       columnCount: COLUMN_COUNT,
       zoomRatio: 1,
       freeze: { startRow: 1, startColumn: 0, ySplit: 1, xSplit: 0 },
