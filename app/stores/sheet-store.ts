@@ -1,11 +1,11 @@
 import { defineStore } from "pinia";
-import { isTemplateSpan, isThisTypeNode } from "typescript";
+import { isTemplateSpan, isThisTypeNode, transpileModule } from "typescript";
 import type { TransportAccounting } from "~/entities/TransportAccountingDto/types";
 import type { TransportAccountingSR } from "~/entities/TransportAccountingSaveRequestDto/types";
 import type {
   TransportAccountingUpdateDto,
   TransportAccountingUpdateRequest,
-} from "~/entities/TransportAccountingUpdateREquest/types";
+} from "~/entities/TransportAccountingUpdateRequest/types";
 
 interface SocketEvent {
   type: "status_create" | "status_update" | "status_delete";
@@ -17,6 +17,7 @@ interface SocketEvent {
 export const useSheetStore = defineStore("sheet", {
   state: () => ({
     records: {} as Record<string, TransportAccounting[]>,
+    companies: [] as any[],
     loading: false,
     error: "" as string | null,
     socketHandlers: [] as Array<(event: SocketEvent) => void>,
@@ -243,5 +244,21 @@ export const useSheetStore = defineStore("sheet", {
         }
       });
     },
+    async fetchCompaniesNameList() {
+      this.loading = true;
+      this.error = "";
+      try {
+        const headers = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
+        const data = await $fetch('/api/company/namelist', { headers });
+        // @ts-ignore
+        const names = data.object as string[]; 
+        this.companies = names;
+      } catch (e: any) {
+        this.error = e?.data?.statusMessage || e?.message || "Ошибка загрузки";
+        throw e;
+      } finally {
+        this.loading = false;
+      }
+    }
   },
 });
